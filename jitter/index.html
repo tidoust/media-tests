@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="description" content="WebCodecs code samples">
+  <meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta id="theme-color" name="theme-color" content="#ffffff">
+  <title>Jitter</title>
+  <style>
+    video {
+      background: #222;
+      margin: 0 0 20px 0;
+      --width: 100%;
+      width: var(--width);
+      height: calc(var(--width) * 9 / 16);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Jitter</h1>
+  <p>
+    <video height="50%" id="outputVideo" autoplay muted></video>
+  </p>
+
+  <button id="start">Start</button>
+  <button id="stop">Stop</button>
+
+  <script src="main.js"></script>
+</body>
+</html>
