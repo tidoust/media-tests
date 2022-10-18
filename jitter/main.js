@@ -118,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async function(event) {
     const inputCanvas = new OffscreenCanvas(width, height);
     const inputCtx = inputCanvas.getContext('2d', { alpha: false });
 
-    function makeUniformVideoFrame(timestamp) {
+    function timestampToVideoFrame(timestamp) {
       const colors = timestampToColors(timestamp);
       inputCtx.fillStyle = `${colors[0]}`;
       inputCtx.fillRect(0, 0, width / 2, height / 2);
@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', async function(event) {
     intervalId = setInterval(async () => {
       if (inputGenerator.readyState === 'live') {
         frameTimes.push({ timestamp, start: performance.now() });
-        await inputWriter.write(makeUniformVideoFrame(timestamp));
+        await inputWriter.write(timestampToVideoFrame(timestamp));
         timestamp++;
       }
     }, 40);
