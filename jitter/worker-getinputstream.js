@@ -23,11 +23,13 @@ self.addEventListener('message', async function (e) {
     if (started) return;
     started = true;
 
-    const colors = e.data.colors;
+    const config = e.data.config;
+    const colors = config.colors;
     const colorBytes = colors.map(rgbToBytes);
-    const width = e.data.width;
-    const height = e.data.height;
-    const frameDuration = e.data.frameDuration || 40;
+    const width = config.width;
+    const height = config.height;
+    const frameRate = config.frameRate || 25;
+    const frameDuration = Math.round(1000 / frameRate);
     const writableStream = e.data.stream;
 
     // Create the canvas that will help generate an input stream of frames

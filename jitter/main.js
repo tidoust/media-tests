@@ -64,7 +64,6 @@ function stop() {
 
 function framestats_report() {
   function array_report(durations) {
-    const all = durations.slice().map(dur => Math.round(dur));
     durations = durations.slice().sort();
     const count = durations.length;
     const sum = durations.reduce((sum, duration) => sum + duration, 0);
@@ -75,13 +74,14 @@ function framestats_report() {
       min: Math.round(Math.min(...durations)),
       max: Math.round(Math.max(...durations)),
       avg: Math.round(sum / count),
-      median,
-      all
+      median
     };
   }
 
-  const diff = frameTimes.slice(0, -1)
-    .map((f, idx) => frameTimes[idx + 1].end - f.end);
+  frameTimes.slice(0, -1).forEach((f, idx) => {
+    f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
+  });
+  const displayDiff = frameTimes.slice(0, -1).map(f => f.displayDuration);
 
   const maxTimestamp = Math.max(...frameTimes.map(f => f.timestamp));
   const missed = [];
@@ -95,7 +95,13 @@ function framestats_report() {
     .filter((f, idx) => idx > 0 && frameTimes[idx - 1].timestamp > f.timestamp);
 
   const res = {
-    diff: array_report(diff),
+    all: frameTimes.map(f => {
+      return {
+        ts: f.timestamp,
+        display: Math.round(f.displayDuration)
+      };
+    }),
+    display: array_report(displayDiff),
     missed,
     outoforder
   };
@@ -125,7 +131,19 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       'generated';
 
     // Get the requested transformation mode
-    const mode = document.querySelector('input[name="mode"]:checked')?.value;
+    const transformMode = document.querySelector('input[name="mode"]:checked')?.value;
+
+    // Get the requested frame rate
+    const frameRate = parseInt(document.getElementById('framerate').value, 10);
+
+    const config = {
+      streamMode,
+      transformMode,
+      colors,
+      width,
+      height,
+      frameRate
+    };
 
     if (streamMode === 'generated') {
       // Generate a stream of VideoFrames in a dedicated worker
@@ -133,15 +151,17 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       const inputTransform = new TransformStream();
       inputWorker.postMessage({
         type: 'start',
-        stream: inputTransform.writable,
-        colors, width, height,
-        frameDuration: 40
+        config,
+        stream: inputTransform.writable
       }, [inputTransform.writable]);
       inputStream = inputTransform.readable;
     }
     else {
-      const mediaStream = await navigator.mediaDevices.getUserMedia(hdConstraints);
+      const constraints = JSON.parse(JSON.stringify(hdConstraints));
+      constraints.video.frameRate = frameRate;
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       inputTrack = mediaStream.getVideoTracks()[0];
+      console.log(inputTrack.getSettings());
       const processor = new MediaStreamTrackProcessor({ track: inputTrack });
       inputStream = processor.readable;
     }
@@ -153,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
     transformWorker.postMessage({
       type: 'start',
-      mode,
+      config,
       streams: {
         input: inputStream,
         output: outputFramesToTrack.writable
@@ -168,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const outputCtx = outputCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
 
     let prevPresentedFrames = 0;
-    function processFrame(ts, { presentedFrames }) {
+    function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
       if (stopped) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
         console.log('requestVideoFrameCallback', 'missed frame: ',
@@ -187,12 +207,13 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         ];
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (!frameTimes.find(f => f.timestamp === frameIndex)) {
-          frameTimes.push({
-            timestamp: frameIndex,
-            end: ts
-          });
+        if (frameTimes.find(f => f.timestamp === frameIndex)) {
+          console.log('beurk?');
         }
+        frameTimes.push({
+          timestamp: frameIndex,
+          expectedDisplayTime
+        });
       }
 
       video.requestVideoFrameCallback(processFrame);
