@@ -12,15 +12,31 @@ self.addEventListener('message', async function(e) {
   if (e.data.type === 'start') {
     const inputStream = e.data.streams.input;
     const outputStream = e.data.streams.output;
-    const mode = e.data.mode || 'identity';
+    const config = e.data.config;
+    const mode = config.transformMode || 'identity';
+    const frameRate = config.frameRate || 25;
+    const frameDuration = Math.round(1000 / frameRate);
 
     let counter = 0;
     const generateOutOfOrderFrames = new TransformStream({
       transform(frame, controller) {
         counter++;
-        const delay = (counter % 50 === 0) ? 200 : 0;
+        const frameId = config.streamMode === 'generated' ? frame.timestamp : counter;
+        let delay = 0;
+        switch (mode) {
+          case 'outoforder':
+            delay = (frameId && frameId % (5 * frameRate) === 0) ?
+              4 * frameDuration :
+              0;
+            break;
+          case 'longer':
+            delay = (frameId && frameId % (2 * frameRate) === 0) ?
+              Math.round(frameDuration / 3) :
+              0;
+            break;
+        }
         if (delay) {
-          console.log('delay frame', counter);
+          console.log('delay frame', frameId);
         }
         setTimeout(function () {
           controller.enqueue(frame);
@@ -34,6 +50,7 @@ self.addEventListener('message', async function(e) {
           .pipeTo(outputStream);
         break;
       case 'outoforder':
+      case 'longer':
         inputStream
           .pipeThrough(generateOutOfOrderFrames)
           .pipeTo(outputStream);

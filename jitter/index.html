@@ -32,12 +32,19 @@
     <label for="streammode2"><code>getUserMedia()</code></label>
   </p>
 
+  <p>Input stream frame rate:</p>
+  <p>
+    <input type="text" id="framerate" value="25">
+  </p>
+
   <p>Transform mode:</p>
   <p>
     <input type="radio" id="mode1" name="mode" value="identity" checked="checked">
     <label for="mode1">No transform applied</label><br>
     <input type="radio" id="mode2" name="mode" value="outoforder">
-    <label for="mode2">Introduce out-of-order frames every 50 frames</label>
+    <label for="mode2">Out-of-order <code>VideoFrame</code> every 5 seconds</label><br>
+    <input type="radio" id="mode3" name="mode" value="longer">
+    <label for="mode3">Take longer to process <code>VideoFrames</code> every 2 seconds (lower frame rate preferrable)</label>
   </p>
   <button id="start">Start</button>
   <button id="stop">Stop</button>
