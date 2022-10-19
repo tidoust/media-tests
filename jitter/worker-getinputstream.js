@@ -18,6 +18,10 @@ let intervalId;
 let started = false;
 
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 self.addEventListener('message', async function (e) {
   if (e.data.type === 'start') {
     if (started) return;
@@ -63,9 +67,15 @@ self.addEventListener('message', async function (e) {
     intervalId = setInterval(async () => {
       if (started) {
         await writer.write(timestampToVideoFrame(timestamp));
-        timestamp++;
+        timestamp += frameDuration;
+        await sleep(50);
+        await writer.write(timestampToVideoFrame(timestamp));
+        timestamp += frameDuration;
+        await sleep(50);
+        await writer.write(timestampToVideoFrame(timestamp));
+        timestamp += frameDuration;
       }
-    }, frameDuration);
+    }, 3 * frameDuration);
   }
   else if (e.data.type === 'stop') {
     if (!started) return;

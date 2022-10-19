@@ -253,10 +253,12 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         if (frameTimes.find(f => f.timestamp === frameIndex)) {
           console.log('beurk?');
         }
-        frameTimes.push({
-          timestamp: frameIndex,
-          expectedDisplayTime
-        });
+        else {
+          frameTimes.push({
+            timestamp: frameIndex,
+            expectedDisplayTime
+          });
+        }
       }
 
       video.requestVideoFrameCallback(processFrame);
