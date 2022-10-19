@@ -2,12 +2,18 @@
 
 let inputWorker;
 let transformWorker;
+let inputStream;
+let inputTrack;
 let outputFramesToTrack;
 let stopped = false;
 let frameTimes = [];
 
 const width = 1920;
 const height = 1080;
+
+const hdConstraints = {
+  video: { width: 1280, height: 720 }
+};
 
 const startButton = document.querySelector('#start');
 const stopButton = document.querySelector('#stop');
@@ -44,13 +50,16 @@ function stop() {
   stopped = true;
   stopButton.disabled = true;
   startButton.disabled = false;
+  if (inputTrack) {
+    inputTrack.stop();
+    inputTrack = null;
+  }
   inputWorker.postMessage({ type: 'stop' });
   transformWorker.postMessage({ type: 'stop' });
-  if (outputFramesToTrack) {
-    outputFramesToTrack.stop();
+  if (frameTimes.length > 0) {
+    const stats = framestats_report();
+    console.log(stats);
   }
-  const stats = framestats_report();
-  console.log(stats);
 }
 
 function framestats_report() {
@@ -82,9 +91,13 @@ function framestats_report() {
     }
   }
 
+  const outoforder = frameTimes
+    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].timestamp > f.timestamp);
+
   const res = {
     diff: array_report(diff),
-    missed
+    missed,
+    outoforder
   };
 
   return res;
@@ -107,15 +120,31 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   async function startMedia() {
     frameTimes = [];
 
-    // Generate a stream of VideoFrames in a dedicated worker
-    // and pass the result as input of the transform worker
-    const inputTransform = new TransformStream();
-    inputWorker.postMessage({
-      type: 'start',
-      stream: inputTransform.writable,
-      colors, width, height,
-      frameDuration: 40
-    }, [inputTransform.writable]);
+    // What input stream should we use as input?
+    const streamMode = document.querySelector('input[name="streammode"]:checked')?.value ||
+      'generated';
+
+    // Get the requested transformation mode
+    const mode = document.querySelector('input[name="mode"]:checked')?.value;
+
+    if (streamMode === 'generated') {
+      // Generate a stream of VideoFrames in a dedicated worker
+      // and pass the result as input of the transform worker
+      const inputTransform = new TransformStream();
+      inputWorker.postMessage({
+        type: 'start',
+        stream: inputTransform.writable,
+        colors, width, height,
+        frameDuration: 40
+      }, [inputTransform.writable]);
+      inputStream = inputTransform.readable;
+    }
+    else {
+      const mediaStream = await navigator.mediaDevices.getUserMedia(hdConstraints);
+      inputTrack = mediaStream.getVideoTracks()[0];
+      const processor = new MediaStreamTrackProcessor({ track: inputTrack });
+      inputStream = processor.readable;
+    }
 
     // The transform worker will create another stream of VideoFrames,
     // which we'll convert to a MediaStreamTrack for rendering onto the
@@ -124,11 +153,12 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
     transformWorker.postMessage({
       type: 'start',
+      mode,
       streams: {
-        input: inputTransform.readable,
+        input: inputStream,
         output: outputFramesToTrack.writable
       }
-    }, [inputTransform.readable, outputFramesToTrack.writable]);
+    }, [inputStream, outputFramesToTrack.writable]);
 
     const video = document.getElementById('outputVideo');
     video.srcObject = new MediaStream([outputFramesToTrack]);
@@ -145,7 +175,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           presentedFrames, 'nb missed: ', presentedFrames - prevPresentedFrames - 1);
       }
       prevPresentedFrames = presentedFrames;
-      if (video.currentTime > 0) {
+      if (video.currentTime > 0 && streamMode === 'generated') {
         outputCtx.drawImage(video, 0, 0);
 
         // Pick pixels at the center of each quadrant of the canvas
