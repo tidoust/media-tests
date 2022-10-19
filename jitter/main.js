@@ -1,8 +1,8 @@
 'use strict';
 
-let inputWriter;
-let generator;
-let intervalId;
+let inputWorker;
+let transformWorker;
+let outputFramesToTrack;
 let stopped = false;
 let frameTimes = [];
 
@@ -32,16 +32,6 @@ const colors = [
   '#ffffff', '#000000'];
 const colorBytes = colors.map(rgbToBytes);
 
-function pad(n, width) {
-  return n.length >= width ? n : '0' + pad(n, width-1);
-}
-
-function timestampToColors(idx) {
-  const str = pad(Number(idx).toString(colors.length), 4);
-  const digits = Array.from(str).map(char => parseInt(char, colors.length));
-  return digits.map(d => colors[d]);
-}
-
 function colorsToTimestamp(pixels) {
   const digits = pixels.map(pixel =>
     colorBytes.findIndex(c => c.every((t, i) => t === pixel[i])));
@@ -54,11 +44,11 @@ function stop() {
   stopped = true;
   stopButton.disabled = true;
   startButton.disabled = false;
-  if (intervalId) {
-    clearInterval(intervalId);
+  inputWorker.postMessage({ type: 'stop' });
+  transformWorker.postMessage({ type: 'stop' });
+  if (outputFramesToTrack) {
+    outputFramesToTrack.stop();
   }
-  inputWriter.abort();
-  generator.stop();
   const stats = framestats_report();
   console.log(stats);
 }
@@ -81,18 +71,18 @@ function framestats_report() {
     };
   }
 
-  let times = frameTimes;
-  if (!frameTimes[0].end) {
-    times = frameTimes.slice(1);
+  const diff = frameTimes.slice(0, -1)
+    .map((f, idx) => frameTimes[idx + 1].end - f.end);
+
+  const maxTimestamp = Math.max(...frameTimes.map(f => f.timestamp));
+  const missed = [];
+  for (let i = 1; i <= maxTimestamp; i++) {
+    if (!frameTimes.find(f => f.timestamp === i)) {
+      missed.push(i);
+    }
   }
-  const missed = times.filter(f => !f.end);
-  times = times.filter(f => !!f.end);
-  const durations = times.map(f => f.end - f.start);
-  const diff = times.slice(0, -1)
-    .map((f, idx) => times[idx + 1].end - f.end);
 
   const res = {
-    glass2glass: array_report(durations),
     diff: array_report(diff),
     missed
   };
@@ -100,7 +90,7 @@ function framestats_report() {
   return res;
 }
 
-document.addEventListener('DOMContentLoaded', async function(event) {
+document.addEventListener('DOMContentLoaded', async function (event) {
   if (stopped) return;
   stopButton.onclick = stop;
 
@@ -111,49 +101,37 @@ document.addEventListener('DOMContentLoaded', async function(event) {
     startMedia();
   }
 
+  inputWorker = new Worker('worker-getinputstream.js');
+  transformWorker = new Worker('worker-transform.js');
+
   async function startMedia() {
     frameTimes = [];
 
-    // Create canvas
-    const inputCanvas = new OffscreenCanvas(width, height);
-    const inputCtx = inputCanvas.getContext('2d', { alpha: false });
+    // Generate a stream of VideoFrames in a dedicated worker
+    // and pass the result as input of the transform worker
+    const inputTransform = new TransformStream();
+    inputWorker.postMessage({
+      type: 'start',
+      stream: inputTransform.writable,
+      colors, width, height,
+      frameDuration: 40
+    }, [inputTransform.writable]);
 
-    function timestampToVideoFrame(timestamp) {
-      const colors = timestampToColors(timestamp);
-      inputCtx.fillStyle = `${colors[0]}`;
-      inputCtx.fillRect(0, 0, width / 2, height / 2);
-      inputCtx.fillStyle = `${colors[1]}`;
-      inputCtx.fillRect(width / 2, 0, width, height / 2);
-      inputCtx.fillStyle = `${colors[2]}`;
-      inputCtx.fillRect(0, height / 2, width / 2, height);
-      inputCtx.fillStyle = `${colors[3]}`;
-      inputCtx.fillRect(width / 2, height / 2, width, height);
-      return new VideoFrame(inputCanvas, { timestamp, alpha: 'discard' });
-    }
+    // The transform worker will create another stream of VideoFrames,
+    // which we'll convert to a MediaStreamTrack for rendering onto the
+    // video element.
+    outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
 
-    // Write 25 frames per second into the canvas
-    // and generate an input MediaStreamTrack from it.
-    const inputGenerator = new MediaStreamTrackGenerator({ kind: 'video' });
-    inputWriter = inputGenerator.writable.getWriter();
-    let timestamp = 0;
-    intervalId = setInterval(async () => {
-      if (inputGenerator.readyState === 'live') {
-        frameTimes.push({ timestamp, start: performance.now() });
-        await inputWriter.write(timestampToVideoFrame(timestamp));
-        timestamp++;
+    transformWorker.postMessage({
+      type: 'start',
+      streams: {
+        input: inputTransform.readable,
+        output: outputFramesToTrack.writable
       }
-    }, 40);
+    }, [inputTransform.readable, outputFramesToTrack.writable]);
 
-    // Convert the MediaStreamTrack to VideoFrame objects
-    const processor = new MediaStreamTrackProcessor({track: inputGenerator});
-    
-    // Convert VideoFrame objects to a MediaStreamTrack
-    generator = new MediaStreamTrackGenerator({kind: 'video'});
-    processor.readable.pipeTo(generator.writable);
-
-    // Output the MediaStreamTrack to a video element
     const video = document.getElementById('outputVideo');
-    video.srcObject = new MediaStream([generator]);
+    video.srcObject = new MediaStream([outputFramesToTrack]);
 
     // Read back the contents of the video element onto a canvas
     const outputCanvas = new OffscreenCanvas(width, height);
@@ -163,7 +141,8 @@ document.addEventListener('DOMContentLoaded', async function(event) {
     function processFrame(ts, { presentedFrames }) {
       if (stopped) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
-        console.log('missed frames', presentedFrames, presentedFrames - prevPresentedFrames - 1);
+        console.log('requestVideoFrameCallback', 'missed frame: ',
+          presentedFrames, 'nb missed: ', presentedFrames - prevPresentedFrames - 1);
       }
       prevPresentedFrames = presentedFrames;
       if (video.currentTime > 0) {
@@ -178,9 +157,11 @@ document.addEventListener('DOMContentLoaded', async function(event) {
         ];
 
         const frameIndex = colorsToTimestamp(pixels);
-        const ftimes = frameTimes.find(f => f.timestamp === frameIndex);
-        if (!ftimes.end) {
-          ftimes.end = performance.now();
+        if (!frameTimes.find(f => f.timestamp === frameIndex)) {
+          frameTimes.push({
+            timestamp: frameIndex,
+            end: ts
+          });
         }
       }
 
