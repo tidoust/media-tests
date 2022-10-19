@@ -78,9 +78,10 @@ function framestats_report() {
     };
   }
 
-  frameTimes.slice(0, -1)
-    .forEach((f, idx) => f.duration = frameTimes[idx + 1].end - f.end);
-  const diff = frameTimes.slice(0, -1).map(f => f.duration);
+  frameTimes.slice(0, -1).forEach((f, idx) => {
+    f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
+  });
+  const displayDiff = frameTimes.slice(0, -1).map(f => f.displayDuration);
 
   const maxTimestamp = Math.max(...frameTimes.map(f => f.timestamp));
   const missed = [];
@@ -95,9 +96,12 @@ function framestats_report() {
 
   const res = {
     all: frameTimes.map(f => {
-      return { ts: f.timestamp, dur: Math.round(f.duration) };
+      return {
+        ts: f.timestamp,
+        display: Math.round(f.displayDuration)
+      };
     }),
-    diff: array_report(diff),
+    display: array_report(displayDiff),
     missed,
     outoforder
   };
@@ -184,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const outputCtx = outputCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
 
     let prevPresentedFrames = 0;
-    function processFrame(ts, { presentedFrames }) {
+    function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
       if (stopped) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
         console.log('requestVideoFrameCallback', 'missed frame: ',
@@ -203,12 +207,13 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         ];
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (!frameTimes.find(f => f.timestamp === frameIndex)) {
-          frameTimes.push({
-            timestamp: frameIndex,
-            end: ts
-          });
+        if (frameTimes.find(f => f.timestamp === frameIndex)) {
+          console.log('beurk?');
         }
+        frameTimes.push({
+          timestamp: frameIndex,
+          expectedDisplayTime
+        });
       }
 
       video.requestVideoFrameCallback(processFrame);
