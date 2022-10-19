@@ -31,16 +31,29 @@ function rgbToBytes(rgb) {
 }
 
 const colors = [
-  '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+  '#000000',
+  '#500000', '#A00000', '#F00000',
+  '#005000', '#00A000', '#00F000',
+  '#000050', '#0000A0', '#0000F0',
+  '#505000', '#50A000', '#50F000',
+  '#500050', '#5000A0', '#5000F0',
+  '#A05000', '#A0A000', '#A0F000',
+  '#A00050', '#A000A0', '#A000F0',
+  '#F05000', '#F0A000', '#F0F000',
+  '#F00050', '#F000A0', '#F000F0',
+  '#505050', '#5050A0', '#5050F0',
+  '#A05050', '#A050A0', '#A050F0'
+];
+  /*'#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
   '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
   '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
   '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080',
-  '#ffffff', '#000000'];
+  '#ffffff', '#000000'*/
 const colorBytes = colors.map(rgbToBytes);
 
 function colorsToTimestamp(pixels) {
   const digits = pixels.map(pixel =>
-    colorBytes.findIndex(c => c.every((t, i) => t === pixel[i])));
+    colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 6)));
   const str = digits.map(d => d.toString(colors.length)).join('');
   const frameIndex = parseInt(str, colors.length);
   return frameIndex;
@@ -126,23 +139,50 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   async function startMedia() {
     frameTimes = [];
 
+    // Get the requested frame rate
+    const frameRate = parseInt(document.getElementById('framerate').value, 10);
+
     // What input stream should we use as input?
     const streamMode = document.querySelector('input[name="streammode"]:checked')?.value ||
       'generated';
 
+    // Encoding/Decoding mode
+    const encodeMode = document.querySelector('input[name="encodemode"]:checked')?.value ||
+      'none';
+
+    let encodeConfig;
+    switch (encodeMode) {
+      case 'none':
+      case 'H264':
+        encodeConfig = {
+          alpha: 'discard',
+          latencyMode: 'realtime',
+          bitrateMode: 'variable',
+          codec: 'H264',
+          width,
+          height,
+          bitrate: 1000000, 
+          framerate: frameRate,
+          keyInterval: 300,
+          codec: 'avc1.42002A',
+          avc: { format: 'annexb' },
+          pt: 1
+        };
+    }
+
     // Get the requested transformation mode
     const transformMode = document.querySelector('input[name="mode"]:checked')?.value;
 
-    // Get the requested frame rate
-    const frameRate = parseInt(document.getElementById('framerate').value, 10);
 
     const config = {
       streamMode,
+      encodeMode,
       transformMode,
       colors,
       width,
       height,
-      frameRate
+      frameRate,
+      encodeConfig
     };
 
     if (streamMode === 'generated') {
@@ -193,6 +233,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
         console.log('requestVideoFrameCallback', 'missed frame: ',
           presentedFrames, 'nb missed: ', presentedFrames - prevPresentedFrames - 1);
+      }
+      if (presentedFrames === prevPresentedFrames) {
+        console.log('requestVideoFrameCallback', 'déjà vu');
       }
       prevPresentedFrames = presentedFrames;
       if (video.currentTime > 0 && streamMode === 'generated') {
