@@ -1,6 +1,7 @@
 'use strict';
 
 let inputWorker;
+let inputGpuWorker;
 let transformWorker;
 let inputStream;
 let inputTrack;
@@ -68,6 +69,7 @@ function stop() {
     inputTrack = null;
   }
   inputWorker.postMessage({ type: 'stop' });
+  inputGpuWorker.postMessage({ type: 'stop' });
   transformWorker.postMessage({ type: 'stop' });
   if (frameTimes.length > 0) {
     const stats = framestats_report();
@@ -134,6 +136,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   }
 
   inputWorker = new Worker('worker-getinputstream.js');
+  inputGpuWorker = new Worker('worker-gpu-inputstream.js');
   transformWorker = new Worker('worker-transform.js');
 
   async function startMedia() {
@@ -184,6 +187,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       frameRate,
       encodeConfig
     };
+    
 
     if (streamMode === 'generated') {
       // Generate a stream of VideoFrames in a dedicated worker
@@ -203,26 +207,47 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       inputTrack = mediaStream.getVideoTracks()[0];
       console.log(inputTrack.getSettings());
       const processor = new MediaStreamTrackProcessor({ track: inputTrack });
+
       inputStream = processor.readable;
+      /*inputStream = inputTransform.readable;*/
     }
 
+    const outputTransform = new TransformStream({
+      transform(frame, controller) {
+        console.log('frame', frame.timestamp);
+        inputGpuWorker.postMessage({ type: 'closeframe', timestamp: frame.timestamp });
+        controller.enqueue(frame);
+      }
+    });
+    
+    inputGpuWorker.postMessage({
+      type: 'start',
+      config,
+      streams: {
+        input: inputStream,
+        output: outputTransform.writable
+      }
+    }, [inputStream, outputTransform.writable]);
+    
     // The transform worker will create another stream of VideoFrames,
     // which we'll convert to a MediaStreamTrack for rendering onto the
     // video element.
     outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
+    outputTransform.readable.pipeTo(outputFramesToTrack.writable);
 
-    transformWorker.postMessage({
+    /*transformWorker.postMessage({
       type: 'start',
       config,
       streams: {
         input: inputStream,
         output: outputFramesToTrack.writable
       }
-    }, [inputStream, outputFramesToTrack.writable]);
+    }, [inputStream, outputFramesToTrack.writable]);*/
 
     const video = document.getElementById('outputVideo');
     video.srcObject = new MediaStream([outputFramesToTrack]);
 
+    /*
     // Read back the contents of the video element onto a canvas
     const outputCanvas = new OffscreenCanvas(width, height);
     const outputCtx = outputCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
@@ -253,14 +278,16 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         if (frameTimes.find(f => f.timestamp === frameIndex)) {
           console.log('beurk?');
         }
-        frameTimes.push({
-          timestamp: frameIndex,
-          expectedDisplayTime
-        });
+        else {
+          frameTimes.push({
+            timestamp: frameIndex,
+            expectedDisplayTime
+          });
+        }
       }
 
       video.requestVideoFrameCallback(processFrame);
     }
-    video.requestVideoFrameCallback(processFrame);
+    video.requestVideoFrameCallback(processFrame);*/
   }
 }, false);
