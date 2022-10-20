@@ -1,5 +1,10 @@
 'use strict';
 
+// TEMP: workaround Chrome failure to close VideoFrames in workers
+// when they are transferred to the main thread.
+// Drop whenever possible!
+const closeHack = true;
+
 let inputWorker;
 let transformWorker;
 let inputStream;
@@ -44,16 +49,11 @@ const colors = [
   '#505050', '#5050A0', '#5050F0',
   '#A05050', '#A050A0', '#A050F0'
 ];
-  /*'#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
-  '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
-  '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
-  '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080',
-  '#ffffff', '#000000'*/
 const colorBytes = colors.map(rgbToBytes);
 
 function colorsToTimestamp(pixels) {
   const digits = pixels.map(pixel =>
-    colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 6)));
+    colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 16)));
   const str = digits.map(d => d.toString(colors.length)).join('');
   const frameIndex = parseInt(str, colors.length);
   return frameIndex;
@@ -94,15 +94,9 @@ function framestats_report() {
   frameTimes.slice(0, -1).forEach((f, idx) => {
     f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
   });
-  const displayDiff = frameTimes.slice(0, -1).map(f => f.displayDuration);
-
-  const maxTimestamp = Math.max(...frameTimes.map(f => f.timestamp));
-  const missed = [];
-  for (let i = 1; i <= maxTimestamp; i++) {
-    if (!frameTimes.find(f => f.timestamp === i)) {
-      missed.push(i);
-    }
-  }
+  const displayDiff = frameTimes.slice(0, -1)
+    .map(f => f.displayDuration)
+    .filter(dur => dur > 0);
 
   const outoforder = frameTimes
     .filter((f, idx) => idx > 0 && frameTimes[idx - 1].timestamp > f.timestamp);
@@ -115,7 +109,6 @@ function framestats_report() {
       };
     }),
     display: array_report(displayDiff),
-    missed,
     outoforder
   };
 
@@ -182,7 +175,8 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       width,
       height,
       frameRate,
-      encodeConfig
+      encodeConfig,
+      closeHack
     };
 
     if (streamMode === 'generated') {
@@ -206,19 +200,41 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       inputStream = processor.readable;
     }
 
-    // The transform worker will create another stream of VideoFrames,
-    // which we'll convert to a MediaStreamTrack for rendering onto the
-    // video element.
-    outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
+    // TEMP: workaround Chrome failure to close VideoFrames in workers
+    // when they are transferred to the main thread.
+    // Drop whenever possible!
+    const closeTransform = new TransformStream({
+      transform(frame, controller) {
+        if (closeHack) {
+          if (streamMode === 'generated') {
+            inputWorker.postMessage({
+              type: 'closeframe',
+              timestamp: frame.timestamp
+            });
+          }
+          transformWorker.postMessage({
+            type: 'closeframe',
+            timestamp: frame.timestamp
+          });
+        }
+        controller.enqueue(frame);
+      }
+    });
 
     transformWorker.postMessage({
       type: 'start',
       config,
       streams: {
         input: inputStream,
-        output: outputFramesToTrack.writable
+        output: closeTransform.writable
       }
-    }, [inputStream, outputFramesToTrack.writable]);
+    }, [inputStream, closeTransform.writable]);
+
+    // The transform worker will create another stream of VideoFrames,
+    // which we'll convert to a MediaStreamTrack for rendering onto the
+    // video element.
+    outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
+    closeTransform.readable.pipeTo(outputFramesToTrack.writable);
 
     const video = document.getElementById('outputVideo');
     video.srcObject = new MediaStream([outputFramesToTrack]);
@@ -231,11 +247,18 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
       if (stopped) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
-        console.log('requestVideoFrameCallback', 'missed frame: ',
-          presentedFrames, 'nb missed: ', presentedFrames - prevPresentedFrames - 1);
-      }
-      if (presentedFrames === prevPresentedFrames) {
-        console.log('requestVideoFrameCallback', 'déjà vu');
+        let missed = presentedFrames - prevPresentedFrames - 1;
+        console.log('missed frame sent to compositor',
+          '| sent:', presentedFrames,
+          '| missed:', missed);
+        while (missed) {
+          // Record missed frames
+          frameTimes.push({
+            timestamp: -1,
+            expectedDisplayTime
+          });
+          missed--;
+        }
       }
       prevPresentedFrames = presentedFrames;
       if (video.currentTime > 0 && streamMode === 'generated') {

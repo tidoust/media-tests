@@ -4,6 +4,11 @@ let started = false;
 let encoder;
 let decoder;
 
+// TEMP: workaround Chrome failure to close VideoFrames in workers
+// when they are transferred to the main thread.
+// Drop whenever possible!
+const framesToClose = {};
+
 function rnd(min, max) {
   min = Math.ceil(min);
   max = Math.floor(max);
@@ -21,26 +26,27 @@ self.addEventListener('message', async function(e) {
     const frameRate = config.frameRate || 25;
     const frameDuration = Math.round(1000 / frameRate);
 
-    let counter = 0;
+    let previousTimestamp = 0;
     const generateOutOfOrderFrames = new TransformStream({
       transform(frame, controller) {
-        counter++;
-        const frameId = config.streamMode === 'generated' ? frame.timestamp : counter;
+        const elapsed = frame.timestamp - previousTimestamp;
         let delay = 0;
         switch (transformMode) {
           case 'outoforder':
-            delay = (frameId && frameId % (5 * frameRate) === 0) ?
-              4 * frameDuration :
-              0;
+            if (elapsed > 5 * 1000 * 1000) {
+              delay = 4 * frameDuration;
+              previousTimestamp = frame.timestamp;
+            }
             break;
           case 'longer':
-            delay = (frameId && frameId % (2 * frameRate) === 0) ?
-              Math.round(frameDuration / 3) :
-              0;
+            if (elapsed > 2 * 1000 * 1000) {
+              delay = Math.round(frameDuration / 3);
+              previousTimestamp = frame.timestamp;
+            }
             break;
         }
         if (delay) {
-          console.log('delay frame', frameId);
+          console.log('delay frame', Math.round(frame.timestamp / 1000));
         }
         setTimeout(function () {
           controller.enqueue(frame);
@@ -181,7 +187,19 @@ self.addEventListener('message', async function(e) {
         break;
     }
 
-    intermediaryStream.pipeTo(outputStream);
+    intermediaryStream
+      // TEMP: workaround Chrome failure to close VideoFrames in workers
+      // when they are transferred to the main thread.
+      // Drop whenever possible!
+      .pipeThrough(new TransformStream({
+        transform(frame, controller) {
+          if (config.closeHack) {
+            framesToClose[frame.timestamp] = frame;
+          }
+          controller.enqueue(frame);
+        }
+      }))
+      .pipeTo(outputStream);
   }
   else if (e.data.type === 'stop') {
     if (encoder) {
@@ -191,6 +209,16 @@ self.addEventListener('message', async function(e) {
     if (decoder) {
       decoder.close();
       decoder = null;
+    }
+  }
+  // TEMP: workaround Chrome failure to close VideoFrames in workers
+  // when they are transferred to the main thread.
+  // Drop whenever possible!
+  else if (e.data.type === 'closeframe') {
+    const frame = framesToClose[e.data.timestamp];
+    if (frame) {
+      frame.close();
+      delete framesToClose[e.data.timestamp];
     }
   }
 });
