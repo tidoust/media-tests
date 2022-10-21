@@ -33,30 +33,44 @@ self.addEventListener('message', async function(e) {
         let delay = 0;
         switch (transformMode) {
           case 'outoforder':
+            // Move the frame out of order by issuing it
+            // later on without interrupting the stream
             if (elapsed > 5 * 1000 * 1000) {
               delay = 4 * frameDuration;
               previousTimestamp = frame.timestamp;
+              console.log('frame moved out of order',
+                Math.round(frame.timestamp / 1000));
+              setTimeout(function () {
+                controller.enqueue(frame);
+              }, delay);
+              return;
             }
             break;
+
           case 'longer':
+            // Make the frame take longer to process
+            // while applying backpressure to the stream
             if (elapsed > 2 * 1000 * 1000) {
               delay = Math.round(frameDuration / 3);
               previousTimestamp = frame.timestamp;
+              console.log('frame delayed',
+                Math.round(frame.timestamp / 1000));
+              return new Promise(res => {
+                setTimeout(function () {
+                  controller.enqueue(frame);
+                  res();
+                }, delay);
+              });
             }
             break;
         }
-        if (delay) {
-          console.log('delay frame', Math.round(frame.timestamp / 1000));
-        }
-        setTimeout(function () {
-          controller.enqueue(frame);
-        }, delay);
+        controller.enqueue(frame);
       }
     });
 
     const EncodeVideoStream = new TransformStream({
       start(controller) {
-        this.pending_outputs = 0;
+        this.encodedCallback = null;
         this.frameCounter = 0;
         this.seqNo = 0;
         this.keyframeIndex = 0;
@@ -89,7 +103,10 @@ self.addEventListener('message', async function(e) {
             chunk.keyframeIndex = this.keyframeIndex;
             chunk.deltaframeIndex = this.deltaframeIndex;
             controller.enqueue(chunk);
-            this.pending_outputs--;
+            if (this.encodedCallback) {
+              this.encodedCallback();
+              this.encodedCallback = null;
+            }
           },
           error: e => {
             console.error(e);
@@ -110,32 +127,32 @@ self.addEventListener('message', async function(e) {
       },
 
       transform(frame, controller) {
-        if (this.pending_outputs <= 30) {
-          this.pending_outputs++;
+        if (this.encoder.state === 'closed') {
+          frame.close();
+          return;
+        }
+
+        return new Promise(resolve => {
+          this.encodedCallback = resolve;
           const insert_keyframe = (this.frameCounter % config.keyInterval) == 0;
           this.frameCounter++;
-          try {
-            if (this.encoder.state != "closed") {
-              this.encoder.encode(frame, { keyFrame: insert_keyframe });
-            } 
-          }
-          catch(e) {
-            console.error(e);
-          }
-        }
-        else {
-          console.log('pending_outputs', this.pending_outputs);
-        }
-        frame.close();
+          this.encoder.encode(frame, { keyFrame: insert_keyframe });
+          frame.close();
+        });
       }
     });
 
 
     const DecodeVideoStream = new TransformStream({
       start(controller) {
+        this.decodedCallback = null;
         this.decoder = decoder = new VideoDecoder({
           output: frame => {
             controller.enqueue(frame);
+            if (this.decodedCallback) {
+              this.decodedCallback();
+              this.decodedCallback = null;
+            }
           },
           error: e => {
             console.error(e)
@@ -143,24 +160,26 @@ self.addEventListener('message', async function(e) {
         });
       },
       transform(chunk, controller) {
-        if (this.decoder.state != 'closed') {
-          if (chunk.type == 'config') {
-            let config = JSON.parse(chunk.config);
-            VideoDecoder.isConfigSupported(config).then(decoderSupport => {
+        if (this.decoder.state === 'closed') {
+          return;
+        }
+        if (chunk.type === 'config') {
+          let config = JSON.parse(chunk.config);
+          return VideoDecoder.isConfigSupported(config)
+            .then(decoderSupport => {
               if (decoderSupport.supported) {
                 this.decoder.configure(decoderSupport.config);
               }
               else {
                 console.error('Decoder config not supported', decoderSupport.config);
               }
-            })
-            .catch(e => {
-              console.error(e);
-            })
-          }
-          else {
+            });
+        }
+        else {
+          return new Promise(resolve => {
+            this.decodedCallback = resolve;
             this.decoder.decode(chunk);
-          }
+          });
         }
       }
     });

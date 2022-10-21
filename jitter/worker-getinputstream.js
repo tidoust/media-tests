@@ -88,7 +88,7 @@ self.addEventListener('message', async function (e) {
         if (config.closeHack) {
           framesToClose[frame.timestamp] = frame;
         }
-        await writer.write(frame);
+        writer.write(frame);
       }
 
       // Next VideoFrame is due in xx ms
