@@ -69,13 +69,9 @@ function stop() {
   }
   inputWorker.postMessage({ type: 'stop' });
   transformWorker.postMessage({ type: 'stop' });
-  if (frameTimes.length > 0) {
-    const stats = framestats_report();
-    console.log(stats);
-  }
 }
 
-function framestats_report() {
+function framestats_report(workerTimes) {
   function array_report(durations) {
     durations = durations.slice().sort();
     const count = durations.length;
@@ -91,24 +87,75 @@ function framestats_report() {
     };
   }
 
+  function getDurations(stats, finalStep, startingStep) {
+    startingStep = startingStep ?? finalStep;
+    return stats
+      .filter(s => s[finalStep]?.end && s[startingStep]?.start)
+      .map(s => s[finalStep].end - s[startingStep].start);
+  }
+
+  function getQueuedDuration(stats) {
+    const times = Object.values(stats)
+      .filter(v => v?.start)
+      .sort((times1, times2) => times1.start - times2.start);
+    return times.slice(0, -1)
+      .map((s, idx) => times[idx + 1].start - s.end)
+      .reduce((curr, total) => total += curr, 0);
+  }
+
+  // Compute approximative time during which all frame was displayed
   frameTimes.slice(0, -1).forEach((f, idx) => {
     f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
   });
+
+  // Collect stats from main thread
+  const all = InstrumentedTransformStream.collectStats();
+  InstrumentedTransformStream.resetStats();
+
+  // Complete stats with worker stats and display stats
+  all.forEach(s => {
+    const wTimes = workerTimes.find(w => w.ts === s.ts);
+    if (wTimes) {
+      Object.assign(s, wTimes);
+    }
+
+    const fTimes = frameTimes.find(f => f.ts === s.ts);
+    if (fTimes) {
+      s.expectedDisplayTime = fTimes.expectedDisplayTime;
+      s.displayDuration = fTimes.displayDuration;
+    }
+  });
+
   const displayDiff = frameTimes.slice(0, -1)
     .map(f => f.displayDuration)
     .filter(dur => dur > 0);
 
   const outoforder = frameTimes
-    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].timestamp > f.timestamp);
+    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].ts > f.ts);
 
   const res = {
-    all: frameTimes.map(f => {
+    all,
+    durations: all.map(s => {
       return {
-        ts: f.timestamp,
-        display: Math.round(f.displayDuration)
+        ts: s.ts,
+        end2end: Math.round(s.final?.end - s.input?.start),
+        encoding: s.encode ? Math.round(s.encode.end - s.encode.start) : 0,
+        decoding: s.decode ? Math.round(s.decode.end - s.decode.start) : 0,
+        outoforder: s.outoforder ? Math.round(s.outoforder.end - s.outoforder.start) : 0,
+        longer: s.longer ? Math.round(s.longer.end - s.longer.start) : 0,
+        display: Math.round(s.displayDuration),
+        queued: getQueuedDuration(s)
       };
     }),
-    display: array_report(displayDiff),
+    stats: {
+      end2end: array_report(getDurations(all, 'final', 'input')),
+      encoding: array_report(getDurations(all, 'encode')),
+      decoding: array_report(getDurations(all, 'decode')),
+      outoforder: array_report(getDurations(all, 'outoforder')),
+      longer: array_report(getDurations(all, 'longer')),
+      display: array_report(displayDiff),
+      queued: array_report(all.map(getQueuedDuration))
+    },
     outoforder
   };
 
@@ -128,8 +175,18 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
   inputWorker = new Worker('worker-getinputstream.js');
   transformWorker = new Worker('worker-transform.js');
+  transformWorker.addEventListener('message', e => {
+    if (e.data.type === 'stats') {
+      if (frameTimes.length > 0) {
+        const stats = framestats_report(e.data.stats);
+        console.log(stats);
+      }
+    }
+  });
 
   async function startMedia() {
+    // Reset stats
+    InstrumentedTransformStream.resetStats();
     frameTimes = [];
 
     // Get the requested frame rate
@@ -179,31 +236,43 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       closeHack
     };
 
+    const inputTransform = new InstrumentedTransformStream({
+      name: 'input',
+      transform(frame, controller) {
+        // Compute end time before calling enqueue as next TransformStream
+        // starts right when enqueue is called
+        this.setEndTime(frame.timestamp);
+        controller.enqueue(frame);
+      }
+    });
     if (streamMode === 'generated') {
       // Generate a stream of VideoFrames in a dedicated worker
       // and pass the result as input of the transform worker
-      const inputTransform = new TransformStream();
       inputWorker.postMessage({
         type: 'start',
         config,
         stream: inputTransform.writable
       }, [inputTransform.writable]);
-      inputStream = inputTransform.readable;
     }
     else {
+      // Generate a MediaStreamTrack from the camera and pass the result in a
+      // MediaStreamTrackProcess to generate a stream of VideoFrames that can
+      // be fed as in put of the transform worker
       const constraints = JSON.parse(JSON.stringify(hdConstraints));
       constraints.video.frameRate = frameRate;
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       inputTrack = mediaStream.getVideoTracks()[0];
       console.log(inputTrack.getSettings());
       const processor = new MediaStreamTrackProcessor({ track: inputTrack });
-      inputStream = processor.readable;
+      processor.readable.pipeThrough(inputTransform);
     }
+    inputStream = inputTransform.readable;
 
     // TEMP: workaround Chrome failure to close VideoFrames in workers
     // when they are transferred to the main thread.
     // Drop whenever possible!
-    const closeTransform = new TransformStream({
+    const closeTransform = new InstrumentedTransformStream({
+      name: 'final',
       transform(frame, controller) {
         if (closeHack) {
           if (streamMode === 'generated') {
@@ -217,6 +286,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
             timestamp: frame.timestamp
           });
         }
+        this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
       }
     });
@@ -273,11 +343,11 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         ];
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (frameTimes.find(f => f.timestamp === frameIndex)) {
-          console.log('beurk?');
+        if (frameTimes.find(f => f.ts === frameIndex * 1000)) {
+          console.log('color decoding issue', frameIndex * 1000, pixels);
         }
         frameTimes.push({
-          timestamp: frameIndex,
+          ts: frameIndex * 1000,
           expectedDisplayTime
         });
       }

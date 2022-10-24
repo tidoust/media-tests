@@ -1,5 +1,7 @@
 'use strict';
 
+importScripts('instrumented-transformstream.js');
+
 let started = false;
 let encoder;
 let decoder;
@@ -17,6 +19,7 @@ function rnd(min, max) {
 
 self.addEventListener('message', async function(e) {
   if (e.data.type === 'start') {
+    InstrumentedTransformStream.resetStats();
     const inputStream = e.data.streams.input;
     const outputStream = e.data.streams.output;
     const config = e.data.config;
@@ -27,7 +30,8 @@ self.addEventListener('message', async function(e) {
     const frameDuration = Math.round(1000 / frameRate);
 
     let previousTimestamp = 0;
-    const generateOutOfOrderFrames = new TransformStream({
+    const generateOutOfOrderFrames = new InstrumentedTransformStream({
+      name: transformMode,
       transform(frame, controller) {
         const elapsed = frame.timestamp - previousTimestamp;
         let delay = 0;
@@ -57,18 +61,22 @@ self.addEventListener('message', async function(e) {
                 Math.round(frame.timestamp / 1000));
               return new Promise(res => {
                 setTimeout(function () {
-                  controller.enqueue(frame);
                   res();
+                  controller.enqueue(frame);
                 }, delay);
               });
             }
             break;
         }
+        // Compute end time before calling enqueue as next TransformStream
+        // starts right when enqueue is called
+        this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
       }
     });
 
-    const EncodeVideoStream = new TransformStream({
+    const EncodeVideoStream = new InstrumentedTransformStream({
+      name: 'encode',
       start(controller) {
         this.encodedCallback = null;
         this.frameCounter = 0;
@@ -102,11 +110,11 @@ self.addEventListener('message', async function(e) {
             chunk.seqNo = this.seqNo;
             chunk.keyframeIndex = this.keyframeIndex;
             chunk.deltaframeIndex = this.deltaframeIndex;
-            controller.enqueue(chunk);
             if (this.encodedCallback) {
               this.encodedCallback();
               this.encodedCallback = null;
             }
+            controller.enqueue(chunk);
           },
           error: e => {
             console.error(e);
@@ -143,16 +151,17 @@ self.addEventListener('message', async function(e) {
     });
 
 
-    const DecodeVideoStream = new TransformStream({
+    const DecodeVideoStream = new InstrumentedTransformStream({
+      name: 'decode',
       start(controller) {
         this.decodedCallback = null;
         this.decoder = decoder = new VideoDecoder({
           output: frame => {
-            controller.enqueue(frame);
             if (this.decodedCallback) {
               this.decodedCallback();
               this.decodedCallback = null;
             }
+            controller.enqueue(frame);
           },
           error: e => {
             console.error(e)
@@ -192,7 +201,7 @@ self.addEventListener('message', async function(e) {
         break;
       case 'outoforder':
       case 'longer':
-        intermediaryStream = inputStream.pipeThrough(generateOutOfOrderFrames)
+        intermediaryStream = inputStream.pipeThrough(generateOutOfOrderFrames);
         break;
     }
 
@@ -221,6 +230,9 @@ self.addEventListener('message', async function(e) {
       .pipeTo(outputStream);
   }
   else if (e.data.type === 'stop') {
+    const stats = InstrumentedTransformStream.collectStats();
+    InstrumentedTransformStream.resetStats();
+    self.postMessage({ type: 'stats', stats });
     if (encoder) {
       encoder.close();
       encoder = null;
