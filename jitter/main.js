@@ -53,7 +53,7 @@ const colorBytes = colors.map(rgbToBytes);
 
 function colorsToTimestamp(pixels) {
   const digits = pixels.map(pixel =>
-    colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 16)));
+    colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 32)));
   const str = digits.map(d => d.toString(colors.length)).join('');
   const frameIndex = parseInt(str, colors.length);
   return frameIndex;
