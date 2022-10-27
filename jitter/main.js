@@ -4,6 +4,7 @@
 // when they are transferred to the main thread.
 // Drop whenever possible!
 const closeHack = true;
+const framesToClose = {};
 
 let inputWorker;
 let transformWorker;
@@ -239,6 +240,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const inputTransform = new InstrumentedTransformStream({
       name: 'input',
       transform(frame, controller) {
+        if (closeHack) {
+          framesToClose[frame.timestamp] = frame;
+        }
         // Compute end time before calling enqueue as next TransformStream
         // starts right when enqueue is called
         this.setEndTime(frame.timestamp);
@@ -285,6 +289,11 @@ document.addEventListener('DOMContentLoaded', async function (event) {
             type: 'closeframe',
             timestamp: frame.timestamp
           });
+          const inputFrame = framesToClose[frame.timestamp];
+          if (inputFrame) {
+            inputFrame.close();
+            delete framesToClose[frame.timestamp];
+          }
         }
         this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
