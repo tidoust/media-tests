@@ -3,7 +3,6 @@
 // TEMP: workaround Chrome failure to close VideoFrames in workers
 // when they are transferred to the main thread.
 // Drop whenever possible!
-const closeHack = true;
 const framesToClose = {};
 
 let inputWorker;
@@ -200,6 +199,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     // Encoding/Decoding mode
     const encodeMode = document.querySelector('input[name="encodemode"]:checked')?.value ||
       'none';
+
+    // TEMP: Enable/Disable VideoFrame close hack
+    const closeHack = !!document.getElementById('closehack').checked;
 
     let encodeConfig;
     switch (encodeMode) {
