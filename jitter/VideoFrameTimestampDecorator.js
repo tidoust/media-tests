@@ -304,7 +304,10 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     }
 
     // The main function of the fragment shader
-    // TODO: Re-write to avoid "if... then... else..."
+    // TODO: It would be much smarter to compute the colors from the timestamp
+    // once and for all, instead of running the same computation ~250 000 times
+    // per frame (Alternatively, this could be done in the vertex shader and
+    // passed as parameter to the fragment shader).
     @fragment
     fn frag_main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
       if (uv.x > 0.5 && uv.y > 0.5) {
