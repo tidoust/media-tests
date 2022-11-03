@@ -145,7 +145,7 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
           mappedAtCreation: true
         });
         const map = new Float32Array(paramsBuffer.getMappedRange());
-        map[0] = Math.floor(timestamp / 1000);
+        map[0] = timestamp;
         map[1] = config.colors.length;
         map.set(colorBytes, 4);
         paramsBuffer.unmap();
@@ -279,14 +279,16 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     @group(0) @binding(1) var myTexture: texture_external;
     @group(0) @binding(2) var<uniform> params: Params;
 
-    // Helper function that converts a number to 4 digits in the given base
+    // Helper function that converts a timestamp to 4 digits representing the
+    // timestamp in milliseconds in the given base
     fn nbToDigits(nb: f32, base: f32) -> vec4<u32> {
-      let first: u32 = u32(nb % base);
-      let firstremainder: f32 = trunc(nb / base);
+      let ms = nb / 1000;
+      let first: u32 = u32(ms % base);
+      let firstremainder: f32 = ms / base;
       let second: u32 = u32(firstremainder % base);
-      let secondremainder: f32 = trunc(firstremainder / base);
+      let secondremainder: f32 = firstremainder / base;
       let third: u32 = u32(secondremainder % base);
-      let thirdremainder: f32 = trunc(secondremainder / base);
+      let thirdremainder: f32 = secondremainder / base;
       let fourth: u32 = u32(thirdremainder % base);
       return vec4<u32>(fourth, third, second, first);
     }
@@ -306,22 +308,10 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     @fragment
     fn frag_main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
       if (uv.x > 0.5 && uv.y > 0.5) {
-        if (uv.x > 0.75) {
-          if (uv.y > 0.75) {
-            return timestampToColor(params.timestamp, 3);
-          }
-          else {
-            return timestampToColor(params.timestamp, 1);
-          }
-        }
-        else {
-          if (uv.y > 0.75) {
-            return timestampToColor(params.timestamp, 2);
-          }
-          else {
-            return timestampToColor(params.timestamp, 0);
-          }
-        }
+        let xcomp: f32 = (1 + sign(uv.x - 0.75)) / 2;
+        let ycomp: f32 = (1 + sign(uv.y - 0.75)) / 2;
+        let idx: u32 = u32(sign(xcomp) + 2 * sign(ycomp));
+        return timestampToColor(params.timestamp, idx);
       }
       else {
         return textureSampleLevel(myTexture, mySampler, uv);

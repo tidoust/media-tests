@@ -95,7 +95,7 @@ function framestats_report(frameTimes, workerTimes) {
       }
     });
 
-    const fTimes = frameTimes.find(f => f.ts === s.ts);
+    const fTimes = frameTimes.find(f => f.ts === Math.floor(s.ts / 1000));
     if (fTimes) {
       s.expectedDisplayTime = fTimes.expectedDisplayTime;
       s.displayDuration = fTimes.displayDuration;
@@ -384,7 +384,8 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
     // Read back the contents of the video element onto a canvas
     const outputCanvas = new OffscreenCanvas(width, height);
-    const outputCtx = outputCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    const outputCtx = outputCanvas.getContext('2d',
+      { alpha: false, willReadFrequently: true });
 
     let prevPresentedFrames = 0;
     function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
@@ -404,23 +405,39 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         }
       }
       prevPresentedFrames = presentedFrames;
-      if (video.currentTime > 0 && streamMode === 'generated') {
-        outputCtx.drawImage(video, 0, 0);
+      if (video.currentTime > 0 && overlayMode === 'timestamp') {
+        // We're only interested by the bottom right part of the video
+        // where the encoded timestamp is
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        outputCtx.drawImage(video,
+          w / 2, h / 2, w / 2, h / 2, // Bottom right part of the video
+          0, 0, w / 2, h / 2);        // Top left part of the canvas
 
-        // Pick pixels at the center of each quadrant of the canvas
-        const pixels = [
-          outputCtx.getImageData(width / 4, height / 4, 1, 1).data,
-          outputCtx.getImageData(3 * width / 4, height / 4, 1, 1).data,
-          outputCtx.getImageData(width / 4, 3 * height / 4, 1, 1).data,
-          outputCtx.getImageData(3 * width / 4, 3 * height / 4, 1, 1).data
+        // Average colors near the center of each quadrant
+        const coordinates = [
+          { x: w * 1 / 8 - 5, y: h * 1 / 8 - 5 },
+          { x: w * 3 / 8 - 5, y: h * 1 / 8 - 5 },
+          { x: w * 1 / 8 - 5, y: h * 3 / 8 - 5 },
+          { x: w * 3 / 8 - 5, y: h * 3 / 8 - 5 }
         ];
+        const pixels = coordinates
+          .map(point => outputCtx.getImageData(point.x, point.y, 10, 10).data)
+          .map(pixels => {
+            return pixels.reduce((total, curr, idx) => {
+              const tidx = idx % 4;
+              total[tidx] += curr;
+              return total;
+            }, [0, 0, 0, 0]);
+          })
+          .map(total => total.map(c => Math.round(c / 100)));
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (frameTimes.find(f => f.ts === frameIndex * 1000)) {
-          console.log('color decoding issue', frameIndex * 1000, pixels);
+        if (frameTimes.find(f => f.ts === frameIndex)) {
+          console.log('color decoding issue', frameIndex, pixels);
         }
         frameTimes.push({
-          ts: frameIndex * 1000,
+          ts: frameIndex,
           expectedDisplayTime
         });
       }
