@@ -24,6 +24,16 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
       ].map(c => c / 255);            // Convert to floats from 0.0 to 1.0
     }
 
+    function pad(n, width) {
+      return n.length >= width ? n : '0' + pad(n, width-1);
+    }
+
+    function timestampToColors(idx) {
+      const str = pad(Number(idx).toString(colorBytes.length), 4);
+      const digits = Array.from(str).map(char => parseInt(char, colorBytes.length));
+      return digits.map(d => colorBytes[d]);
+    }
+
     // Internal variables used to set things up for WebGPU and keep track of
     // the setup so that the "transform" function can use it.
     let gpuDevice;
@@ -32,7 +42,7 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     let textureSampler;
 
     // Convert hexadecimal rgb colors to GPU-friendly colors once and for all
-    const colorBytes = config.colors.map(rgbToBytes).flat();
+    const colorBytes = config.colors.map(rgbToBytes);
 
     // Create canvas onto which we'll render
     const canvas = new OffscreenCanvas(
@@ -114,15 +124,8 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
        * Process a new frame on the GPU to overlay the timestamp on top of the
        * frame, and return a new VideoFrame with the result.
        * 
-       * To process the new frame, parameters need to be sent to the GPU through
-       * a GPUBuffer. That is easier said than done. As apparently everyone
-       * should know, the offset of a struct member of type
-       * "array<vec4<u32>, 64>" in address space "uniform" must be a multiple of
-       * 16 bytes. The first two parameters in the structure take only 8 bytes,
-       * so we need to leave 8 additional bytes before we can send the colors.
-       * No error would be raised if we fail to do that (except if GPUBuffer
-       * size is not large enough) but colors wouldn't be the right ones, since
-       * RGBA components would be shifted by 2.
+       * To process the new frame, colors to use to encode the timestamp need
+       * to be sent to the GPU through a GPUBuffer.
        */
       transform(frame, controller) {
         // Adjust the size of the canvas to the size of the frame to process
@@ -134,21 +137,17 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
         // Save the frame's timestamp
         const timestamp = frame.timestamp;
 
-        // Prepare the GPUBuffer that will contain the parameters sent to the
-        // GPU (note the additional 8 bytes, and the offset at which colorBytes
-        // gets written).
+        // Prepare the GPUBuffer that will contain the colors sent to the GPU.
         // Note we can only encode reasonable numbers so timestamp gets
         // converted to milliseconds.
-        const paramsBuffer = gpuDevice.createBuffer({
-          size: 2 * 4 + 8 + 64 * 4 * 4,
+        const colorsBuffer = gpuDevice.createBuffer({
+          size: 4 * 4 * 4,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
           mappedAtCreation: true
         });
-        const map = new Float32Array(paramsBuffer.getMappedRange());
-        map[0] = timestamp;
-        map[1] = config.colors.length;
-        map.set(colorBytes, 4);
-        paramsBuffer.unmap();
+        const map = new Float32Array(colorsBuffer.getMappedRange());
+        map.set(timestampToColors(Math.floor(timestamp / 1000)).flat(), 0);
+        colorsBuffer.unmap();
 
         // Create the binding group with the sample, the texture and the params
         const uniformBindGroup = gpuDevice.createBindGroup({
@@ -156,7 +155,7 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
           entries: [
             { binding: 0, resource: textureSampler },
             { binding: 1, resource: gpuDevice.importExternalTexture({source: frame}) },
-            { binding: 2, resource: { buffer: paramsBuffer } }
+            { binding: 2, resource: { buffer: colorsBuffer } }
           ],
         });
 
@@ -256,62 +255,35 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
   /**
    * Fragment shader:
    * Receives the uv coordinates of the pixel to render as parameter.
+   *
    * Expects a sampler, used to get pixels out of a texture, an external texture
-   * that represents the frame to draw, and a parameters structure with the
-   * timestamp to render as overlay, along with the colors to use, to be set in
-   * what GPU specs call a binding group.
+   * that represents the frame to draw, and the four colors to use to encode the
+   * digits of the timestamp, to be set in what GPU specs call a binding group.
    * The parameters structure is a "uniform" because the variable is to hold
    * the same value for all calls of the fragment shader.
-   * 
+   *
+   * The fragment shader could compute the colors itself but that would be a
+   * waste of time: the computation is needed for ~250 000 pixels and the
+   * computation is the same for all of these pixels!
+   *
    * The shader returns the color of the pixel to render, which is either the
    * color of the corresponding pixel in the video frame, or a color that
    * encodes one of the digits of the frame's timestamp (in base "number of
    * colors") when the pixel is in the bottom right corner of the canvas.
    */
   static #fragmentShaderSource = `
-    struct Params {
-      timestamp: f32,
-      nbColors: f32,
-      colors: array<vec4<f32>,64>
-    }
-
     @group(0) @binding(0) var mySampler: sampler;
     @group(0) @binding(1) var myTexture: texture_external;
-    @group(0) @binding(2) var<uniform> params: Params;
-
-    // Helper function that converts a timestamp to 4 digits representing the
-    // timestamp in milliseconds in the given base
-    fn nbToDigits(nb: f32, base: f32) -> vec4<u32> {
-      let ms = nb / 1000;
-      let first: u32 = u32(ms % base);
-      let firstremainder: f32 = ms / base;
-      let second: u32 = u32(firstremainder % base);
-      let secondremainder: f32 = firstremainder / base;
-      let third: u32 = u32(secondremainder % base);
-      let thirdremainder: f32 = secondremainder / base;
-      let fourth: u32 = u32(thirdremainder % base);
-      return vec4<u32>(fourth, third, second, first);
-    }
-
-    // Helper function that returns the color representing the digit
-    // (in base "number of colors") of the timestamp at the given
-    // index (from 0 to 3).
-    fn timestampToColor(ts: f32, index: u32) -> vec4<f32> {
-      let digits: vec4<u32> = nbToDigits(ts, params.nbColors);
-      let digit: u32 = digits[index];
-      let color: vec4<f32> = params.colors[digit];
-      return vec4<f32>(color[0], color[1], color[2], 1.0);
-    }
+    @group(0) @binding(2) var<uniform> tsColors: array<vec4<f32>,4>;
 
     // The main function of the fragment shader
-    // TODO: Re-write to avoid "if... then... else..."
     @fragment
     fn frag_main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
       if (uv.x > 0.5 && uv.y > 0.5) {
         let xcomp: f32 = (1 + sign(uv.x - 0.75)) / 2;
         let ycomp: f32 = (1 + sign(uv.y - 0.75)) / 2;
         let idx: u32 = u32(sign(xcomp) + 2 * sign(ycomp));
-        return timestampToColor(params.timestamp, idx);
+        return tsColors[idx];
       }
       else {
         return textureSampleLevel(myTexture, mySampler, uv);
