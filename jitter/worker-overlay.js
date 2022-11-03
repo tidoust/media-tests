@@ -15,7 +15,7 @@ self.addEventListener('message', async function(e) {
     const outputStream = e.data.streams.output;
     const config = e.data.config;
 
-    const addTimestampToFrame = new VideoFrameTimestampDecorator(config);
+    const addTimestampToFrame = new VideoFrameTimestampDecorator('overlay', config);
 
     inputStream
       .pipeThrough(addTimestampToFrame)

@@ -5,35 +5,12 @@
 // Drop whenever possible!
 const framesToClose = {};
 
-let inputWorker;
-let transformWorker;
-let inputStream;
-let inputTrack;
-let outputFramesToTrack;
-let stopped = false;
-let frameTimes = [];
-
 const width = 1920;
 const height = 1080;
 
 const hdConstraints = {
   video: { width: 1280, height: 720 }
 };
-
-const startButton = document.querySelector('#start');
-const stopButton = document.querySelector('#stop');
-
-startButton.disabled = false;
-stopButton.disabled = true;
-
-function rgbToBytes(rgb) {
-  return [
-    parseInt(rgb.slice(1,3), 16),
-    parseInt(rgb.slice(3,5), 16),
-    parseInt(rgb.slice(5,7), 16),
-    255
-  ];
-}
 
 const colors = [
   '#000000',
@@ -51,6 +28,15 @@ const colors = [
 ];
 const colorBytes = colors.map(rgbToBytes);
 
+function rgbToBytes(rgb) {
+  return [
+    parseInt(rgb.slice(1,3), 16),
+    parseInt(rgb.slice(3,5), 16),
+    parseInt(rgb.slice(5,7), 16),
+    255
+  ];
+}
+
 function colorsToTimestamp(pixels) {
   const digits = pixels.map(pixel =>
     colorBytes.findIndex(c => c.every((t, i) => Math.abs(t - pixel[i]) < 32)));
@@ -59,19 +45,7 @@ function colorsToTimestamp(pixels) {
   return frameIndex;
 }
 
-function stop() {
-  stopped = true;
-  stopButton.disabled = true;
-  startButton.disabled = false;
-  if (inputTrack) {
-    inputTrack.stop();
-    inputTrack = null;
-  }
-  inputWorker.postMessage({ type: 'stop' });
-  transformWorker.postMessage({ type: 'stop' });
-}
-
-function framestats_report(workerTimes) {
+function framestats_report(frameTimes, workerTimes) {
   function array_report(durations) {
     durations = durations.slice().sort();
     const count = durations.length;
@@ -103,7 +77,7 @@ function framestats_report(workerTimes) {
       .reduce((curr, total) => total += curr, 0);
   }
 
-  // Compute approximative time during which all frame was displayed
+  // Compute approximative time during which each frame was displayed
   frameTimes.slice(0, -1).forEach((f, idx) => {
     f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
   });
@@ -114,10 +88,12 @@ function framestats_report(workerTimes) {
 
   // Complete stats with worker stats and display stats
   all.forEach(s => {
-    const wTimes = workerTimes.find(w => w.ts === s.ts);
-    if (wTimes) {
-      Object.assign(s, wTimes);
-    }
+    Object.values(workerTimes).forEach(wt => {
+      const wStats = wt.find(w => w.ts === s.ts);
+      if (wStats) {
+        Object.assign(s, wStats);
+      }
+    });
 
     const fTimes = frameTimes.find(f => f.ts === s.ts);
     if (fTimes) {
@@ -139,6 +115,7 @@ function framestats_report(workerTimes) {
       return {
         ts: s.ts,
         end2end: Math.round(s.final?.end - s.input?.start),
+        overlay: s.overlay ? Math.round(s.overlay.end - s.overlay.start) : 0,
         encoding: s.encode ? Math.round(s.encode.end - s.encode.start) : 0,
         decoding: s.decode ? Math.round(s.decode.end - s.decode.start) : 0,
         outoforder: s.outoforder ? Math.round(s.outoforder.end - s.outoforder.start) : 0,
@@ -149,6 +126,7 @@ function framestats_report(workerTimes) {
     }),
     stats: {
       end2end: array_report(getDurations(all, 'final', 'input')),
+      overlay: array_report(getDurations(all, 'overlay')),
       encoding: array_report(getDurations(all, 'encode')),
       decoding: array_report(getDurations(all, 'decode')),
       outoforder: array_report(getDurations(all, 'outoforder')),
@@ -163,42 +141,88 @@ function framestats_report(workerTimes) {
 }
 
 document.addEventListener('DOMContentLoaded', async function (event) {
-  if (stopped) return;
-  stopButton.onclick = stop;
+  let running = false;
+  let inputTrack;
+  let frameTimes = [];
+  let reportedStats = {};
 
-  startButton.onclick = () => {
-    stopped = false;
-    startButton.disabled = true;
-    stopButton.disabled = false;
-    startMedia();
-  }
+  const startButton = document.getElementById('start');
+  const stopButton = document.getElementById('stop');
+  const paramsSection = document.getElementById('params');
+  const video = document.getElementById('outputVideo');
 
-  inputWorker = new Worker('worker-getinputstream.js');
-  transformWorker = new Worker('worker-transform.js');
-  transformWorker.addEventListener('message', e => {
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  paramsSection.hidden = false;
+  video.hidden = true;
+
+  const inputWorker = new Worker('worker-getinputstream.js');
+  const overlayWorker = new Worker('worker-overlay.js');
+  overlayWorker.addEventListener('message', e => {
     if (e.data.type === 'stats') {
-      if (frameTimes.length > 0) {
-        const stats = framestats_report(e.data.stats);
+      reportedStats.overlayWorker = e.data.stats;
+      if (reportedStats.transformWorker) {
+        const stats = framestats_report(frameTimes, reportedStats);
         console.log(stats);
       }
     }
+  });
+
+  const transformWorker = new Worker('worker-transform.js');
+  transformWorker.addEventListener('message', e => {
+    if (e.data.type === 'stats') {
+      reportedStats.transformWorker = e.data.stats;
+      if (reportedStats.overlayWorker) {
+        const stats = framestats_report(frameTimes, reportedStats);
+        console.log(stats);
+      }
+    }
+  });
+
+  startButton.addEventListener('click', _ => {
+    running = true;
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    paramsSection.hidden = true;
+    video.hidden = false;
+    startMedia();
+  });
+
+  stopButton.addEventListener('click', _ => {
+    running = false;
+    stopButton.disabled = true;
+    startButton.disabled = false;
+    paramsSection.hidden = false;
+    video.hidden = true;
+    if (inputTrack) {
+      inputTrack.stop();
+      inputTrack = null;
+    }
+    inputWorker.postMessage({ type: 'stop' });
+    overlayWorker.postMessage({ type: 'stop' });
+    transformWorker.postMessage({ type: 'stop' });
   });
 
   async function startMedia() {
     // Reset stats
     InstrumentedTransformStream.resetStats();
     frameTimes = [];
+    reportedStats = {};
+
+    // What input stream should we use as input?
+    const streamModeEl = document.querySelector('input[name="streammode"]:checked');
+    const streamMode = streamModeEl?.value || 'generated';
 
     // Get the requested frame rate
     const frameRate = parseInt(document.getElementById('framerate').value, 10);
 
-    // What input stream should we use as input?
-    const streamMode = document.querySelector('input[name="streammode"]:checked')?.value ||
-      'generated';
+    // Overlay mode
+    const overlayModeEl = document.querySelector('input[name="overlay"]:checked');
+    const overlayMode = overlayModeEl?.value || 'none';
 
     // Encoding/Decoding mode
-    const encodeMode = document.querySelector('input[name="encodemode"]:checked')?.value ||
-      'none';
+    const encodeModeEl = document.querySelector('input[name="encodemode"]:checked');
+    const encodeMode = encodeModeEl?.value || 'none';
 
     // TEMP: Enable/Disable VideoFrame close hack
     const closeHack = !!document.getElementById('closehack').checked;
@@ -226,7 +250,6 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     // Get the requested transformation mode
     const transformMode = document.querySelector('input[name="mode"]:checked')?.value;
 
-
     const config = {
       streamMode,
       encodeMode,
@@ -239,6 +262,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       closeHack
     };
 
+    // The "input" step is the first time at which we see the VideoFrame. The
+    // instrumented TransformStream allows us to capture that start time
+    // (the transform in itself should basically take 0ms)
     const inputTransform = new InstrumentedTransformStream({
       name: 'input',
       transform(frame, controller) {
@@ -251,9 +277,10 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         controller.enqueue(frame);
       }
     });
+
     if (streamMode === 'generated') {
-      // Generate a stream of VideoFrames in a dedicated worker
-      // and pass the result as input of the transform worker
+      // Generate a stream of VideoFrames in a dedicated worker and pass the
+      // result as input to the "input" TransformStream
       inputWorker.postMessage({
         type: 'start',
         config,
@@ -263,16 +290,46 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     else {
       // Generate a MediaStreamTrack from the camera and pass the result in a
       // MediaStreamTrackProcess to generate a stream of VideoFrames that can
-      // be fed as in put of the transform worker
+      // be fed as input to the "input" TransformStream
       const constraints = JSON.parse(JSON.stringify(hdConstraints));
       constraints.video.frameRate = frameRate;
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       inputTrack = mediaStream.getVideoTracks()[0];
       console.log(inputTrack.getSettings());
       const processor = new MediaStreamTrackProcessor({ track: inputTrack });
-      processor.readable.pipeThrough(inputTransform);
+      processor.readable.pipeTo(inputTransform.writable);
     }
-    inputStream = inputTransform.readable;
+
+    let inputStream;
+    if (overlayMode === 'timestamp') {
+      const overlayTransform = new TransformStream({
+        transform(frame, controller) {
+          if (closeHack) {
+            // The overlay creates another VideoFrame from the first one.
+            // Chromium does not properly close the frame, so let's do that now
+            // and track the new VideoFrame from now on.
+            if (framesToClose[frame.timestamp]) {
+              framesToClose[frame.timestamp].close();
+            }
+            framesToClose[frame.timestamp] = frame;
+          }
+          controller.enqueue(frame);
+        }
+      });
+      overlayWorker.postMessage({
+        type: 'start',
+        config,
+        streams: {
+          input: inputTransform.readable,
+          output: overlayTransform.writable
+        }
+      }, [inputTransform.readable, overlayTransform.writable]);
+      inputStream = overlayTransform.readable;
+    }
+    else {
+      // No overlay requested
+      inputStream = inputTransform.readable;
+    }
 
     // TEMP: workaround Chrome failure to close VideoFrames in workers
     // when they are transferred to the main thread.
@@ -283,6 +340,12 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         if (closeHack) {
           if (streamMode === 'generated') {
             inputWorker.postMessage({
+              type: 'closeframe',
+              timestamp: frame.timestamp
+            });
+          }
+          if (overlayMode !== 'none') {
+            overlayWorker.postMessage({
               type: 'closeframe',
               timestamp: frame.timestamp
             });
@@ -314,10 +377,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     // The transform worker will create another stream of VideoFrames,
     // which we'll convert to a MediaStreamTrack for rendering onto the
     // video element.
-    outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
+    const outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
     closeTransform.readable.pipeTo(outputFramesToTrack.writable);
 
-    const video = document.getElementById('outputVideo');
     video.srcObject = new MediaStream([outputFramesToTrack]);
 
     // Read back the contents of the video element onto a canvas
@@ -326,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
     let prevPresentedFrames = 0;
     function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
-      if (stopped) return;
+      if (!running) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
         let missed = presentedFrames - prevPresentedFrames - 1;
         console.log('missed frame sent to compositor',

@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('instrumented-transformstream.js');
+importScripts('InstrumentedTransformStream.js');
 
 /**
  * A type of TransformStream that can process a stream of VideoFrames to
@@ -12,7 +12,7 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
    * Constructor takes config object, basically only needed to get the list of
    * colors to use to encode the timestamp.
    */
-  constructor(config) {
+  constructor(name, config) {
     // Helper function to convert an hexadecimal color into 4 color components
     // (note GPUs love float numbers between 0.0 and 1.0, including for colors)
     function rgbToBytes(rgb) {
@@ -42,6 +42,8 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     const gpuCanvasContext = canvas.getContext('webgpu');
 
     super({
+      name,
+
       /**
        * Initialize the WebGPU context
        */

@@ -6,8 +6,11 @@
   <meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1">
   <meta name="mobile-web-app-capable" content="yes">
   <meta id="theme-color" name="theme-color" content="#ffffff">
-  <title>Jitter</title>
+  <title>Video frame processing tests</title>
   <style>
+    h1 {
+      margin-top: 0;
+    }
     video {
       background: #222;
       margin: 0 0 20px 0;
@@ -19,52 +22,64 @@
 </head>
 
 <body>
-  <h1>Jitter</h1>
-
-  <p>Input stream:</p>
-  <p>
-    <input type="radio" id="streammode1" name="streammode" value="generated" checked="checked">
-    <label for="streammode1">Generated <code>VideoFrame</code> stream</label><br>
-    <input type="radio" id="streammode2" name="streammode" value="usermedia">
-    <label for="streammode2">From camera (<code>getUserMedia()</code> + <code>MediaStreamTrackProcessor</code>)</label>
-  </p>
-
-  <p>Input stream frame rate:</p>
-  <p>
-    <input type="text" id="framerate" value="25">
-  </p>
-
-  <p>Transform mode:</p>
-  <p>
-    <input type="radio" id="mode1" name="mode" value="identity" checked="checked">
-    <label for="mode1">No transform applied</label><br>
-    <input type="radio" id="mode2" name="mode" value="outoforder">
-    <label for="mode2">Out-of-order <code>VideoFrame</code> every 5 seconds</label><br>
-    <input type="radio" id="mode3" name="mode" value="longer">
-    <label for="mode3">Take longer to process <code>VideoFrames</code> every 2 seconds (lower frame rate preferrable)</label>
-  </p>
-
-  <p>Encode mode:</p>
-  <p>
-    <input type="radio" id="encodemode1" name="encodemode" value="none" checked="checked">
-    <label for="encodemode1">None</label><br>
-    <input type="radio" id="encodemode2" name="encodemode" value="H264">
-    <label for="encodemode2">H.264</label>
-  </p>
-
-  <p>
-    <input type="checkbox" id="closehack" checked="checked">
-    <label for="closehack">Enable <code>VideoFrame</code> close hack</label>
-  </p>
+  <h1>Video frame processing tests</h1>
 
   <button id="start">Start</button>
   <button id="stop">Stop</button>
+
+  <div id="params">
+    <p>
+      How to create the initial stream of <code>VideoFrame</code>:<br/>
+      <input type="radio" id="streammode1" name="streammode" value="generated">
+      <label for="streammode1">From scratch (<code>new VideoFrame()</code>)</label><br/>
+      <input type="radio" id="streammode2" name="streammode" value="usermedia" checked="checked">
+      <label for="streammode2">From camera (<code>getUserMedia()</code> + <code>MediaStreamTrackProcessor</code>)</label>
+    </p>
+
+    <p>
+      Number of video frames per second:<br/>
+      <input type="text" id="framerate" value="25">
+    </p>
+
+    <p>
+      Add overlay to track actual display time in <code>&lt;video&gt;</code> element?<br/>
+      <i>(Warning: requires browser to support WebGPU)</i><br/>
+      <input type="radio" id="overlay1" name="overlay" value="none">
+      <label for="overlay1">No overlay</label><br/>
+      <input type="radio" id="overlay2" name="overlay" value="timestamp" checked="checked">
+      <label for="overlay2">Add timestamp overlay in bottom-right corner</label>
+    </p>
+
+    <p>
+      Transform frames in any way?<br/>
+      <input type="radio" id="mode1" name="mode" value="identity" checked="checked">
+      <label for="mode1">No transform applied</label><br/>
+      <input type="radio" id="mode2" name="mode" value="outoforder">
+      <label for="mode2">Out-of-order <code>VideoFrame</code> every 5 seconds</label><br/>
+      <input type="radio" id="mode3" name="mode" value="longer">
+      <label for="mode3">Take longer to process <code>VideoFrames</code> every 2 seconds (lower frame rate preferrable)</label>
+    </p>
+
+    <p>
+      Add Encode/Decode steps?<br/>
+      <input type="radio" id="encodemode1" name="encodemode" value="none" checked="checked">
+      <label for="encodemode1">None</label><br/>
+      <input type="radio" id="encodemode2" name="encodemode" value="H264">
+      <label for="encodemode2">H.264</label>
+    </p>
+
+    <p>
+      Implementation bug workarounds:<br/>
+      <input type="checkbox" id="closehack" checked="checked">
+      <label for="closehack">Enable <code>VideoFrame</code> close hack</label>
+    </p>
+  </div>
 
   <p>
     <video height="50%" id="outputVideo" autoplay muted></video>
   </p>
 
-  <script src="instrumented-transformstream.js"></script>
+  <script src="InstrumentedTransformStream.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

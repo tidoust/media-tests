@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('instrumented-transformstream.js');
+importScripts('InstrumentedTransformStream.js');
 
 let started = false;
 let encoder;

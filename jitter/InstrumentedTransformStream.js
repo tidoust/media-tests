@@ -1,3 +1,5 @@
+'use strict';
+
 class InstrumentedTransformStream extends TransformStream {
   static #stats = [];
   static #timerLastId = 0;
