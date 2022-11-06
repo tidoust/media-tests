@@ -34,7 +34,15 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
     // Convert hexadecimal rgb colors to GPU-friendly colors once and for all
     const colorBytes = config.colors.map(rgbToBytes).flat();
 
-    // Create canvas onto which we'll render
+    // Create the canvas onto which we'll render. From a WebGPU perspective, a
+    // canvas is not required since we're not going to display the result on
+    // screen. We could rather render to a plain texture made from
+    // "gpuDevice.createTexture()", as described in:
+    // https://github.com/gpuweb/gpuweb/discussions/3420#discussioncomment-3580711
+    // However, the VideoFrame constructor cannot directly take a GPUBuffer as
+    // input and converting it to an ArrayBuffer would, I think, force a copy
+    // to the CPU memory that should best be avoided at this stage. Hence the
+    // canvas.
     const canvas = new OffscreenCanvas(
       config?.width ?? 1920,
       config?.height ?? 1080
