@@ -1,16 +1,9 @@
 'use strict';
 
-function rgbToBytes(rgb) {
-  return [
-    parseInt(rgb.slice(1,3), 16),
-    parseInt(rgb.slice(3,5), 16),
-    parseInt(rgb.slice(5,7), 16),
-    255
-  ];
-}
-
-function pad(n, width) {
-  return n.length >= width ? n : '0' + pad(n, width-1);
+function getRandomInt(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min) + min);
 }
 
 let writer;
@@ -27,9 +20,8 @@ self.addEventListener('message', async function (e) {
     if (started) return;
     started = true;
 
+    // Configuration
     const config = e.data.config;
-    const colors = config.colors;
-    const colorBytes = colors.map(rgbToBytes);
     const width = config.width;
     const height = config.height;
     const frameRate = config.frameRate || 25;
@@ -38,26 +30,66 @@ self.addEventListener('message', async function (e) {
     writer = writableStream.getWriter();
 
     // Create the canvas that will help generate an input stream of frames
-    // that encode a frame index
     const inputCanvas = new OffscreenCanvas(width, height);
     const inputCtx = inputCanvas.getContext('2d', { alpha: false });
 
-    function timestampToColors(idx) {
-      const str = pad(Number(idx).toString(colors.length), 4);
-      const digits = Array.from(str).map(char => parseInt(char, colors.length));
-      return digits.map(d => colors[d]);
-    }
+    // Current position and velocity of the logo
+    const position = {
+      x: getRandomInt(0, width / 4),
+      y: getRandomInt(0, height / 4)
+    };
+    const velocity = {
+      x: getRandomInt(5, 30),
+      y: getRandomInt(5, 30)
+    };
 
     function timestampToVideoFrame(timestamp) {
-      const colors = timestampToColors(timestamp);
-      inputCtx.fillStyle = `${colors[0]}`;
-      inputCtx.fillRect(0, 0, width / 2, height / 2);
-      inputCtx.fillStyle = `${colors[1]}`;
-      inputCtx.fillRect(width / 2, 0, width, height / 2);
-      inputCtx.fillStyle = `${colors[2]}`;
-      inputCtx.fillRect(0, height / 2, width / 2, height);
-      inputCtx.fillStyle = `${colors[3]}`;
-      inputCtx.fillRect(width / 2, height / 2, width, height);
+      inputCtx.fillStyle = '#005a9c';
+      inputCtx.fillRect(0, 0, width, height);
+
+      // Render timestamp
+      inputCtx.fillStyle = "white";
+      inputCtx.font = "32px Arial";
+      inputCtx.fillText(`Timestamp: ${timestamp}`, 10, 42);
+
+      inputCtx.drawImage(config.icon, position.x, position.y);
+
+      // Bump on frame borders
+      position.x += velocity.x;
+      position.y += velocity.y;
+      if (position.x < 0) {
+        position.x = 0 - position.x;
+        velocity.x = 0 - velocity.x;
+      }
+      if (position.y < 0) {
+        position.y = 0 - position.y;
+        velocity.y = 0 - velocity.y;
+      }
+      if (position.x > width - config.icon.width) {
+        position.x = 2 * (width - config.icon.width) - position.x;
+        velocity.x = 0 - velocity.x;
+      }
+      if (position.y > height - config.icon.height) {
+        position.y = 2 * (height - config.icon.height) - position.y;
+        velocity.y = 0 - velocity.y;
+      }
+
+      // Bump on timestamp overlay
+      if (config.overlayMode === 'timestamp') {
+        if ((position.x > width / 2 - config.icon.width) &&
+            (position.y > height / 2 - config.icon.height)) {
+          if (position.x - (width / 2 - config.icon.width) <
+              position.y - (height / 2 - config.icon.height)) {
+            position.x = 2 * (width / 2 - config.icon.width) - position.x;
+            velocity.x = 0 - velocity.x;
+          }
+          else {
+            position.y = 2 * (height / 2 - config.icon.height) - position.y;
+            velocity.y = 0 - velocity.y;
+          }
+        }
+      }
+
       return new VideoFrame(inputCanvas, {
         timestamp: timestamp * 1000,
         alpha: 'discard'

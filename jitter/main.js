@@ -151,6 +151,14 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   const paramsSection = document.getElementById('params');
   const video = document.getElementById('outputVideo');
 
+  // Retrieve W3C icon and create an ImageBitmap out of it
+  const img = new Image(288, 192);
+  let icon;
+  img.src = 'w3c.svg';
+  img.addEventListener('load', async _ => {
+    icon = await createImageBitmap(img);
+  });
+
   startButton.disabled = false;
   stopButton.disabled = true;
   paramsSection.hidden = false;
@@ -254,6 +262,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       streamMode,
       encodeMode,
       transformMode,
+      overlayMode,
       colors,
       width,
       height,
@@ -283,7 +292,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       // result as input to the "input" TransformStream
       inputWorker.postMessage({
         type: 'start',
-        config,
+        config: Object.assign({ icon }, config),
         stream: inputTransform.writable
       }, [inputTransform.writable]);
     }
