@@ -29,66 +29,206 @@ self.addEventListener('message', async function (e) {
     const writableStream = e.data.stream;
     writer = writableStream.getWriter();
 
-    // Create the canvas that will help generate an input stream of frames
+    // Create the canvas onto which we'll generate our frame drawing
     const inputCanvas = new OffscreenCanvas(width, height);
     const inputCtx = inputCanvas.getContext('2d', { alpha: false });
 
-    // Current position and velocity of the logo
-    const position = {
-      x: getRandomInt(0, width / 4),
-      y: getRandomInt(0, height / 4)
+    // Rough animation speed control
+    // TODO: make animation independent of frame rate
+    const nbFramesBeforeNextMove = 2;
+
+    // Stars
+    const starRectWidth = 10;
+    const starRectHeight = 10;
+    const starPhases = [
+      {
+        rectangles: [
+          { x: 0, y: 0 }
+        ]
+      },
+      {
+        rectangles: [
+          { x: 0 - starRectWidth, y: 0 },
+          { x: starRectWidth, y: 0 },
+          { x: 0, y: 0 - starRectHeight },
+          { x: 0, y: starRectHeight }
+        ]
+      },
+      {
+        rectangles: [
+          { x: 0 - starRectWidth, y: 0 },
+          { x: starRectWidth, y: 0 },
+          { x: 0, y: 0 - starRectHeight },
+          { x: 0, y: starRectHeight },
+          { x: 0 - 2 * starRectWidth, y: 0 },
+          { x: 2 * starRectWidth, y: 0 },
+          { x: 0, y: 0 - 2 * starRectHeight },
+          { x: 0, y: 2 * starRectHeight }
+        ]
+      },
+      {
+        rectangles: [
+          { x: 0, y: 0 },
+          { x: -2 * starRectWidth, y: 0 },
+          { x: 2 * starRectWidth, y: 0 },
+          { x: 0, y: -2 * starRectHeight },
+          { x: 0, y: 2 * starRectHeight },
+          { x: -3 * starRectWidth, y: 0 },
+          { x: 3 * starRectWidth, y: 0 },
+          { x: 0, y: -3 * starRectHeight },
+          { x: 0, y: 3 * starRectHeight }
+        ]
+      },
+      {
+        rectangles: [
+          { x: 0, y: 0 },
+          { x: -3 * starRectWidth, y: 0 },
+          { x: 3 * starRectWidth, y: 0 },
+          { x: 0, y: -3 * starRectHeight },
+          { x: 0, y: 3 * starRectHeight }
+        ]
+      },
+      {
+        rectangles: [
+          { x: -3 * starRectWidth, y: 0 },
+          { x: 3 * starRectWidth, y: 0 },
+          { x: 0, y: -3 * starRectHeight },
+          { x: 0, y: 3 * starRectHeight },
+          { x: -2.5 * starRectWidth, y: starRectHeight },
+          { x: 2.5 * starRectWidth, y: starRectHeight },
+          { x: -2.5 * starRectWidth, y: 0 - starRectHeight },
+          { x: 2.5 * starRectWidth, y: 0 - starRectHeight },
+          { x: starRectWidth, y: -2.5 * starRectHeight },
+          { x: starRectWidth, y: 2.5 * starRectHeight },
+          { x: 0 - starRectWidth, y: -2.5 * starRectHeight },
+          { x: 0 - starRectWidth, y: 2.5 * starRectHeight }
+        ]
+      },
+      {
+        rectangles: [
+          { x: -3 * starRectWidth, y: 0 },
+          { x: 3 * starRectWidth, y: 0 },
+          { x: 0, y: -3 * starRectHeight },
+          { x: 0, y: 3 * starRectHeight },
+          { x: -2.5 * starRectWidth, y: starRectHeight },
+          { x: 2.5 * starRectWidth, y: starRectHeight },
+          { x: -2.5 * starRectWidth, y: 0 - starRectHeight },
+          { x: 2.5 * starRectWidth, y: 0 - starRectHeight },
+          { x: starRectWidth, y: -2.5 * starRectHeight },
+          { x: starRectWidth, y: 2.5 * starRectHeight },
+          { x: 0 - starRectWidth, y: -2.5 * starRectHeight },
+          { x: 0 - starRectWidth, y: 2.5 * starRectHeight },
+          { x: -2 * starRectWidth, y: -2 * starRectHeight },
+          { x: -2 * starRectWidth, y: 2 * starRectHeight },
+          { x: 2 * starRectWidth, y: -2 * starRectHeight },
+          { x: 2 * starRectWidth, y: 2 * starRectHeight }
+        ]
+      }
+    ];
+
+    const nbStars = 20;
+    const nbStarRows = 4;
+    const nbStarsPerRow = nbStars / nbStarRows;
+
+    const stars = [];
+    for (let i = 0; i < nbStars; i++) {
+      const col = i % nbStarsPerRow;
+      let row = Math.floor(i / nbStarsPerRow);
+      const colWidth = width / nbStarsPerRow;
+      const rowHeight = height / nbStarRows;
+      stars[i] = {
+        x: col * (width + 3 * starRectWidth) / nbStarsPerRow +
+          colWidth / 2 + getRandomInt(-colWidth / 4, colWidth / 4),
+        y: row * height / nbStarRows +
+          rowHeight / 2 + getRandomInt(-rowHeight / 8, rowHeight / 8),
+        phase: getRandomInt(0, starPhases.length),
+        pause: 0
+      }
+    }
+    const starVelocity = -20;
+
+    // Rainbow
+    const rainbow = {
+      x: width / 3,
+      y: height / 2,
+      phase: 0,
+      pause: 0
     };
-    const velocity = {
-      x: getRandomInt(5, 30),
-      y: getRandomInt(5, 30)
-    };
+    const rainbowStripeWidth = 80;
+    const rainbowStripeHeight = 20;
+    const rainbowColors = [
+      '#f00',
+      '#f90',
+      '#ff0',
+      '#3f0',
+      '#09f',
+      '#63f'
+    ];
 
     function timestampToVideoFrame(timestamp) {
       inputCtx.fillStyle = '#005a9c';
       inputCtx.fillRect(0, 0, width, height);
 
       // Render timestamp
-      inputCtx.fillStyle = "white";
-      inputCtx.font = "32px Arial";
+      inputCtx.fillStyle = 'white';
+      inputCtx.font = '32px Arial';
       inputCtx.fillText(`Timestamp: ${timestamp}`, 10, 42);
 
-      inputCtx.drawImage(config.icon, position.x, position.y);
-
-      // Bump on frame borders
-      position.x += velocity.x;
-      position.y += velocity.y;
-      if (position.x < 0) {
-        position.x = 0 - position.x;
-        velocity.x = 0 - velocity.x;
-      }
-      if (position.y < 0) {
-        position.y = 0 - position.y;
-        velocity.y = 0 - velocity.y;
-      }
-      if (position.x > width - config.icon.width) {
-        position.x = 2 * (width - config.icon.width) - position.x;
-        velocity.x = 0 - velocity.x;
-      }
-      if (position.y > height - config.icon.height) {
-        position.y = 2 * (height - config.icon.height) - position.y;
-        velocity.y = 0 - velocity.y;
-      }
-
-      // Bump on timestamp overlay
-      if (config.overlayMode === 'timestamp') {
-        if ((position.x > width / 2 - config.icon.width) &&
-            (position.y > height / 2 - config.icon.height)) {
-          if (position.x - (width / 2 - config.icon.width) <
-              position.y - (height / 2 - config.icon.height)) {
-            position.x = 2 * (width / 2 - config.icon.width) - position.x;
-            velocity.x = 0 - velocity.x;
-          }
-          else {
-            position.y = 2 * (height / 2 - config.icon.height) - position.y;
-            velocity.y = 0 - velocity.y;
-          }
+      // Render the stars
+      stars.forEach(star => {
+        inputCtx.fillStyle = 'white';
+        starPhases[star.phase].rectangles.forEach(rect => {
+          inputCtx.fillRect(
+            star.x + rect.x,
+            star.y + rect.y,
+            starRectWidth,
+            starRectHeight
+          );
+        });
+        if (star.pause < nbFramesBeforeNextMove) {
+          star.pause += 1;
         }
+        else {
+          star.phase = (star.phase + 1) % starPhases.length;
+          star.pause = 0;
+        }
+        star.x += starVelocity;
+        if (star.x < -3 * starRectWidth) {
+          star.x = width + 3 * starRectWidth;
+        }
+      });
+
+      // Render the rainbow
+      const stripe = {
+        x: rainbow.x - rainbowStripeWidth,
+        y: rainbow.y - 3 * rainbowStripeHeight,
+        phase: rainbow.phase
+      };
+      while (stripe.x > 0 - rainbowStripeWidth) {
+        rainbowColors.forEach(color => {
+          inputCtx.fillStyle = color;
+          inputCtx.fillRect(
+            stripe.x,
+            stripe.y + ((stripe.phase === 1) ? rainbowStripeHeight / 4 : 0),
+            rainbowStripeWidth,
+            rainbowStripeHeight
+          );
+          stripe.y += rainbowStripeHeight;
+        });
+        stripe.x -= rainbowStripeWidth;
+        stripe.y = rainbow.y - 3 * rainbowStripeHeight;
+        stripe.phase = (stripe.phase + 1) % 2;
       }
+      if (rainbow.pause < 2 * nbFramesBeforeNextMove) {
+        rainbow.pause += 1;
+      }
+      else {
+        rainbow.phase = (rainbow.phase + 1) % 2;
+        rainbow.pause = 0;
+      }
+
+      // Render W3C icon next to rainbow
+      inputCtx.drawImage(config.icon, rainbow.x, rainbow.y - 192/2 + ((rainbow.phase === 1) ? rainbowStripeHeight / 4 : 0));
 
       return new VideoFrame(inputCanvas, {
         timestamp: timestamp * 1000,
