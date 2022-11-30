@@ -325,7 +325,7 @@ class VideoFrameTimestampDecorator extends InstrumentedTransformStream {
         return timestampToColor(params.timestamp, idx);
       }
       else {
-        return textureSampleLevel(myTexture, mySampler, uv);
+        return textureSampleBaseClampToEdge(myTexture, mySampler, uv);
       }
     }
   `;
