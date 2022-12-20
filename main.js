@@ -5,13 +5,27 @@
 // Drop whenever possible!
 const framesToClose = {};
 
+
+/**
+ * Intrinsic dimensions of the video
+ */
 const width = 1920;
 const height = 1080;
 
+
+/**
+ * Resolution of the video extracted by camera
+ * (not using 1920*1080 as cameras may not support that resolution)
+ */
 const hdConstraints = {
   video: { width: 1280, height: 720 }
 };
 
+
+/**
+ * A set of colors used to encode the frame's timestamp in an overlay, and
+ * companion function to decode a timestamp from a set of pixels.
+ */
 const colors = [
   '#000000',
   '#500000', '#A00000', '#F00000',
@@ -45,6 +59,11 @@ function colorsToTimestamp(pixels) {
   return frameIndex;
 }
 
+
+/**
+ * Compute min/max/avg/median statistics from collected times. Done once when
+ * user hits "stop" button.
+ */
 function framestats_report(frameTimes, workerTimes) {
   function array_report(durations) {
     durations = durations.slice().sort();
@@ -151,7 +170,16 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   const paramsSection = document.getElementById('params');
   const video = document.getElementById('outputVideo');
 
-  // Retrieve W3C icon and create an ImageBitmap out of it
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  paramsSection.hidden = false;
+  video.hidden = true;
+
+  // Retrieve W3C icon and create an ImageBitmap out of it.
+  // The W3C icon will be embedded in the stream of VideoFrames produced in
+  // worker-getinputstream.js. That step cannot be done in the worker though
+  // because browsers typically do not support creating an ImageBitmap out of
+  // an SVG image in workers.
   const img = new Image(288, 192);
   let icon;
   img.src = 'w3c.svg';
@@ -159,11 +187,10 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     icon = await createImageBitmap(img);
   });
 
-  startButton.disabled = false;
-  stopButton.disabled = true;
-  paramsSection.hidden = false;
-  video.hidden = true;
-
+  // Initialize workers:
+  // 1. a worker that can produce a stream of VideoFrames from scratch
+  // 2. a worker that can add an overlay to a stream of VideoFrames
+  // 3. a worker that can apply transforms to a stream of VideoFrames
   const inputWorker = new Worker('worker-getinputstream.js');
   const overlayWorker = new Worker('worker-overlay.js');
   overlayWorker.addEventListener('message', e => {
@@ -187,6 +214,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     }
   });
 
+  // React to user action on "start" and "stop" buttons
   startButton.addEventListener('click', _ => {
     running = true;
     startButton.disabled = true;
@@ -217,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     frameTimes = [];
     reportedStats = {};
 
-    // What input stream should we use as input?
+    // What stream should we use as input?
     const streamModeEl = document.querySelector('input[name="streammode"]:checked');
     const streamMode = streamModeEl?.value || 'generated';
 

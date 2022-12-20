@@ -1,5 +1,17 @@
 'use strict';
 
+/**
+ * Worker that produces a stream of VideoFrame.
+ * 
+ * Produced stream represents a Nyan-Cat-like animation featuring the W3C logo.
+ * This is done by preparing individual frames in a canvas and by creating a
+ * VideoFrame object out of it.
+ * 
+ * Frames are produced at the requested frame rate if possible. Backpressure
+ * signals received from downstream will slow generation and may mean that some
+ * frames cannot be generated in time or at all.
+ */
+
 function getRandomInt(min, max) {
   min = Math.ceil(min);
   max = Math.floor(max);

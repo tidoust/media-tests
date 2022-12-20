@@ -1,5 +1,13 @@
 'use strict';
 
+/**
+ * Worker that takes a stream of VideoFrame as input and adds an overlay in
+ * the bottom right corner that encodes the timestamp of each VideoFrame.
+ * 
+ * The worker uses VideoFrameTimestampDecorator under the hoods.
+ */
+
+
 importScripts('VideoFrameTimestampDecorator.js');
 
 // TEMP: workaround Chrome failure to close VideoFrames in workers

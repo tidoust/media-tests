@@ -1,5 +1,17 @@
 'use strict';
 
+/**
+ * Worker that takes a stream of VideoFrame as input and applies requested
+ * transformations to it.
+ * 
+ * Currently available transformations are very basic: delays or H.264
+ * encode/decode. H.264 encode/decode was typically adapted from:
+ * https://github.com/w3c/webcodecs/pull/583
+ * (although note the code does not queue frames onto the
+ * VideoEncoder/VideoDecoder but rather relies on streams to handle queueing
+ * and backpressure)
+ */
+
 importScripts('InstrumentedTransformStream.js');
 
 let started = false;
