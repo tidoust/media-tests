@@ -71,7 +71,7 @@ The backpressure mechanism in WHATWG Streams takes some getting used to, but app
 - The `VideoEncoder` and `VideoDecoder` classes in WebCodecs have their own queueing mechanism.
 - `VideoTrackGenerator` and `MediaStreamTrackProcessor` create a bridge between WebRTC and WebCodecs, with specific queueing rules.
 
-There are good reasons that explain the divergence of approaches regardling handling across technologies. For example, see [Decoupling WebCodecs from Streams](https://docs.google.com/document/d/10S-p3Ob5snRMjBqpBf5oWn6eYij1vos7cujHoOCCCAw/edit#). From a developer perspective, this makes mixing technologies harder. It also creates more than one way to build the same pipeline with no obvious *right* approach to queueing and backpressure.
+There are good reasons that explain the divergence of approaches regarding streams handling across technologies. For example, see [Decoupling WebCodecs from Streams](https://docs.google.com/document/d/10S-p3Ob5snRMjBqpBf5oWn6eYij1vos7cujHoOCCCAw/edit#). From a developer perspective, this makes mixing technologies harder. It also creates more than one way to build the same pipeline with no obvious *right* approach to queueing and backpressure.
 
 
 ### Hard to mix technologies that require dedicated expertise
