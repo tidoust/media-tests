@@ -1,15 +1,15 @@
 # Experimenting with video processing pipelines on the web
 
-This repository contains experimental code to create video processing pipelines using web technologies. It features a semi-generic mechanism to measure time spent by each processing step.
+This repository contains experimental code to create video processing pipelines using web technologies. It features a semi-generic mechanism to measure the time taken by each processing step.
 
-The code was developed by @dontcallmedom and @tidoust during W3C's Geek Week 2022. It should be regarded as a neophyte attempt to combine recent web technologies to process video, with a view to evaluating how easy or difficult it is to create such processing pipelines. Code here should not be seen as authoritative or even correct! We don't have particular plans to maintain the code.
+The code was developed by @dontcallmedom and @tidoust during W3C's Geek Week 2022. It should be viewed as a semi-neophyte attempt to combine recent web technologies to process video, with a view to evaluating how easy or difficult it is to create such processing pipelines. Code here should not be seen as authoritative or even correct. We don't have particular plans to maintain the code either.
 
-See also the [Processing video streams slides](https://www.w3.org/2022/Talks/fd-media-tests/), that present the approach we took and reflect on key outcomes.
+See also the [Processing video streams slides](https://www.w3.org/2022/Talks/fd-media-tests/) that present the approach we took and reflect on key outcomes.
 
 
 ## Combined Web technologies
 
-Main web technologies that the code combines are:
+Main web technologies combined are:
 
 - [WebCodecs](https://www.w3.org/TR/webcodecs/) to expose/access actual video frame pixels, through the `VideoFrame`, `VideoEncoder` and `VideoDecoder` interfaces.
 - [MediaStreamTrack Insertable Media Processing using Streams](https://www.w3.org/TR/mediacapture-transform/) to connect the WebRTC world with WebCodecs, through the `VideoTrackGenerator` (formerly `MediaStreamTrackGenerator`) and `MediaStreamTrackProcessor` interfaces.
@@ -23,7 +23,7 @@ Main web technologies that the code combines are:
 
 ## Running the demo
 
-The [demo](https://tidoust.github.io/media-tests/) requires support for the list of technologies mentioned above. Currently, this means Google Chrome with WebGPU enabled.
+The [demo](https://tidoust.github.io/media-tests/) requires support for the list of technologies mentioned above. Currently, this means using Google Chrome with WebGPU enabled.
 
 The demo lets the user:
 - Choose a source of input to create an initial stream of `VideoFrame`: either an animation created from scratch (using `OffscreenCanvas`) or a stream generated from a camera.
@@ -54,39 +54,39 @@ Here are some of the things we struggled with, wondered about or learned while d
 
 ### No way to track a frame fed to a `<video>` element
 
-The frame's `timestamp` can be used to track a video frame throughout a processing pipeline. In most scenarios though, the final step is to inject the resulting video into a `<video>` element for playback. There is no way direct way to tell when a specific frame has been rendered by a `<video>` element. [`HTMLVideoElement.requestVideoFrameCallback()`](https://wicg.github.io/video-rvfc/) exposes a number of times that may be used to compute when the underlying frame will be presented to the user, but it does not (yet?) expose the underlying frame's `timestamp` so applications cannot tell which frame is going to be presented.
+The frame's `timestamp` can be used to track a video frame throughout a processing pipeline. In most scenarios though, the final step is to inject the resulting video into a `<video>` element for playback, and there is no direct way to tell when a specific frame has been rendered by a `<video>` element. [`HTMLVideoElement.requestVideoFrameCallback()`](https://wicg.github.io/video-rvfc/) exposes a number of times that may be used to compute when the underlying frame will be presented to the user, but it does not (yet?) expose the underlying frame's `timestamp` so applications cannot tell which frame is going to be presented.
 
-The code's workaround is to encode the frame's `timestamp` in an overlay and to copy frames rendered to the `<video>` element to a `<canvas>` element to decode the time. That works so-so because it needs to run on the main thread and `requestVideoFrameCallback` can miss frames as a result.
+The code's workaround is to encode the frame's `timestamp` in an overlay and to copy frames rendered to the `<video>` element to a `<canvas>` element whenever the `requestVideoFrameCallback()` callback is called to decode the timestamp. That works so-so because it needs to run on the main thread and `requestVideoFrameCallback()` sometimes misses frames as a result.
 
 Being able to track when a frame is actually rendered seems useful for statistic purpose, e.g. to evaluate jitter effects, and probably for synchronization purpose as well if video needs to be synchronized with some separate audio stream and/or other non-video overlays.
 
-An alternative is to render video frames to a `<canvas>` element. This means potentially having to re-implement an entire media player, which seems a hard problem.
+An alternative approach would be to render video frames directly to a `<canvas>` element instead of to a `<video>` element. This means having to re-implement an entire media player in the generic case, which seems a hard problem.
 
 
 ### Hard to mix hybrid stream architectures
 
-The backpressure mechanism in WHATWG Streams takes some getting used to, but eventually appears simple and powerful after a while. It remains difficult to reason about backpressure in video processing pipelines because, by definition, this backpressure mechanism stops whenever something else than WHATWG Streams are used:
+The backpressure mechanism in WHATWG Streams takes some getting used to, but appears simple and powerful after a while. It remains difficult to reason about backpressure in video processing pipelines because, by definition, this backpressure mechanism stops whenever something else than WHATWG Streams are used:
 
 - WebRTC uses `MediaStreamTrack` by default.
 - The `VideoEncoder` and `VideoDecoder` classes in WebCodecs have their own queueing mechanism.
 - `VideoTrackGenerator` and `MediaStreamTrackProcessor` create a bridge between WebRTC and WebCodecs, with specific queueing rules.
 
-There are good reasons that explain the divergence of approaches regardling handling across technologies. For example, see [Decoupling WebCodecs from Streams](https://docs.google.com/document/d/10S-p3Ob5snRMjBqpBf5oWn6eYij1vos7cujHoOCCCAw/edit#). From a developer perspective, this makes it harder to mix technologies though. It also creates more than one way to build the same pipeline with no obvious *right* approach to queueing and backpressure.
+There are good reasons that explain the divergence of approaches regardling handling across technologies. For example, see [Decoupling WebCodecs from Streams](https://docs.google.com/document/d/10S-p3Ob5snRMjBqpBf5oWn6eYij1vos7cujHoOCCCAw/edit#). From a developer perspective, this makes mixing technologies harder. It also creates more than one way to build the same pipeline with no obvious *right* approach to queueing and backpressure.
 
 
 ### Hard to mix technologies that require dedicated expertise
 
-More generally speaking and not surprisingly, it is hard to mix technologies that require different sets of skills. For instance, understanding pipeline layouts and memory alignment concepts in WebGPU and WGSL is no easy task when one is not an expert and "just" wants to leverage the technology for something that seems simple on paper. Same thing for streams and backpressure, and video encoding/decoding specificities. It is also hard to understand when copies are made when technologies are combined. All in all, combining technologies creates cognitive load in short, especially because the technologies at hand live in their own ecosystem with somewhat disjoint communities.
+More generally speaking and not surprisingly, it is hard to mix technologies that require different sets of skills. Examples include: pipeline layouts and memory alignment concepts in WebGPU and WGSL, streams and backpressure, video encoding/decoding parameters. It is also hard to understand when copies are made when technologies are combined. In short, combining technologies creates cognitive load, all the more so than these technologies live in their own ecosystem with somewhat disjoint communities.
 
 
 ### Missing WebGPU / WebCodecs connector?
 
-Importing a `VideoFrame` to WebGPU as an external texture is relatively straightforward. To create a `VideoFrame` once GPU processing is over, the code waits for [`onSubmittedWorkDone`](https://www.w3.org/TR/webgpu/#dom-gpuqueue-onsubmittedworkdone) and creates a `VideoFrame` out of the rendered `<canvas>`. In theory at least, a `<canvas>` seems unnecessary but a `VideoFrame` cannot be created out of a `GPUBuffer`. Also, this approach seems to create a `~10ms` delay in average and it is not clear whether this is just a temporary implementation hiccup (support for WebGPU and WebCodecs in Chrome are still under development) or just not the right way to do things. The shaders that create the overlay were clumsily written and can be drastically optimized but the delay seems to appear even when the shaders merely sample the texture. Is there a more efficient way to read back from WebGPU and hook into further video processing stages?
+Importing a `VideoFrame` to WebGPU as an external texture is relatively straightforward. To create a `VideoFrame` once GPU processing is over, the code waits for [`onSubmittedWorkDone`](https://www.w3.org/TR/webgpu/#dom-gpuqueue-onsubmittedworkdone) and creates a `VideoFrame` out of the rendered `<canvas>`. In theory at least, the `<canvas>` seems unnecessary but a `VideoFrame` cannot be created out of a `GPUBuffer` (at least without copying the buffer into CPU memory first). Also, this approach seems to create a `~10ms` delay in average and it is not clear whether this is just a temporary implementation hiccup (support for WebGPU and WebCodecs in Chrome are still under development) or just not the right approach to creating a `VideoFrame`. The shaders that create the overlay were clumsily written and can be drastically optimized for sure, but the delay seems to appear even when the shaders merely sample the texture. Is there a more efficient way to read back from WebGPU and hook into further video processing stages?
 
 
 ### VideoFrame and workers
 
-Streams can be transferred to workers. This makes it easy to create processing steps in workers, and transfer streams of `VideoFrame` back and forth between the main thread and workers. Our expectation is that, given a frame, `close()` should be called only once, where it currently sits. Current implementation of WebCodecs in Chrome seems to lose itself when it transfers a stream of `VideoFrame` across worker boundaries, requiring code to close a `VideoFrame` in all workers where a it was transferred to avoid warnings messages from the garbage collector or situations where processing freezes because no further `VideoFrame` can be produced. This is implemented as a hack in the code.
+Streams can be transferred to workers. This makes it easy to create processing steps in workers, and transfer streams of `VideoFrame` back and forth between the main thread and workers. Our expectation is that, given a frame, `close()` should only need to be called once, where the `VideoFrame` currently sits. Current implementation of WebCodecs in Chrome seems to lose itself when it transfers a stream of `VideoFrame` across worker boundaries, requiring code to close a `VideoFrame` in all workers where it was transferred to avoid warning messages from the garbage collector or situations where processing freezes because no further `VideoFrame` can be produced. This is implemented as a hack in the code.
 
 
 ## Acknowledgments
