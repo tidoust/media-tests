@@ -300,7 +300,7 @@ self.addEventListener('message', async function (e) {
     if (!started) return;
     started = false;
     if (writer) {
-      writer.abort();
+      writer.close();
       writer = null;
     }
   }
