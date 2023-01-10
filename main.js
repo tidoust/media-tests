@@ -108,13 +108,13 @@ function framestats_report(frameTimes, workerTimes) {
   // Complete stats with worker stats and display stats
   all.forEach(s => {
     Object.values(workerTimes).forEach(wt => {
-      const wStats = wt.find(w => w.ts === s.ts);
+      const wStats = wt.find(w => w.id === s.id);
       if (wStats) {
         Object.assign(s, wStats);
       }
     });
 
-    const fTimes = frameTimes.find(f => f.ts === Math.floor(s.ts / 1000));
+    const fTimes = frameTimes.find(f => f.id === Math.floor(s.id / 1000));
     if (fTimes) {
       s.expectedDisplayTime = fTimes.expectedDisplayTime;
       s.displayDuration = fTimes.displayDuration;
@@ -126,13 +126,13 @@ function framestats_report(frameTimes, workerTimes) {
     .filter(dur => dur > 0);
 
   const outoforder = frameTimes
-    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].ts > f.ts);
+    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].id > f.id);
 
   const res = {
     all,
     durations: all.map(s => {
       return {
-        ts: s.ts,
+        id: s.id,
         end2end: Math.round(s.final?.end - s.input?.start),
         overlay: s.overlay ? Math.round(s.overlay.end - s.overlay.start) : 0,
         encoding: s.encode ? Math.round(s.encode.end - s.encode.start) : 0,
@@ -308,9 +308,6 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         if (closeHack) {
           framesToClose[frame.timestamp] = frame;
         }
-        // Compute end time before calling enqueue as next TransformStream
-        // starts right when enqueue is called
-        this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
       }
     });
@@ -397,7 +394,6 @@ document.addEventListener('DOMContentLoaded', async function (event) {
             delete framesToClose[frame.timestamp];
           }
         }
-        this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
       }
     });
@@ -435,7 +431,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         while (missed) {
           // Record missed frames
           frameTimes.push({
-            timestamp: -1,
+            id: -1,
             expectedDisplayTime
           });
           missed--;
@@ -470,11 +466,11 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           .map(total => total.map(c => Math.round(c / 100)));
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (frameTimes.find(f => f.ts === frameIndex)) {
+        if (frameTimes.find(f => f.id === frameIndex)) {
           console.log('color decoding issue', frameIndex, pixels);
         }
         frameTimes.push({
-          ts: frameIndex,
+          id: frameIndex,
           expectedDisplayTime
         });
       }

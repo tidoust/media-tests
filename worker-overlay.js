@@ -8,6 +8,7 @@
  */
 
 
+importScripts('InstrumentedTransformStream.js');
 importScripts('VideoFrameTimestampDecorator.js');
 
 // TEMP: workaround Chrome failure to close VideoFrames in workers
@@ -18,12 +19,14 @@ const framesToClose = {};
 
 self.addEventListener('message', async function(e) {
   if (e.data.type === 'start') {
-    VideoFrameTimestampDecorator.resetStats();
+    InstrumentedTransformStream.resetStats();
     const inputStream = e.data.streams.input;
     const outputStream = e.data.streams.output;
     const config = e.data.config;
 
-    const addTimestampToFrame = new VideoFrameTimestampDecorator('overlay', config);
+    const addOverlayTransformer = new VideoFrameTimestampDecorator(config);
+    const addTimestampToFrame = new InstrumentedTransformStream(
+      Object.assign({ name: 'overlay' }, addOverlayTransformer));
 
     inputStream
       .pipeThrough(addTimestampToFrame)
@@ -41,8 +44,8 @@ self.addEventListener('message', async function(e) {
       .pipeTo(outputStream);
   }
   else if (e.data.type === 'stop') {
-    const stats = VideoFrameTimestampDecorator.collectStats();
-    VideoFrameTimestampDecorator.resetStats();
+    const stats = InstrumentedTransformStream.collectStats();
+    InstrumentedTransformStream.resetStats();
     self.postMessage({ type: 'stats', stats });
   }
   // TEMP: workaround Chrome failure to close VideoFrames in workers

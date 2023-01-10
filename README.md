@@ -39,8 +39,8 @@ The code uses `TransformStream` to create processing pipelines. That seemed like
 
 The code features the following files:
 
-- `InstrumentedTransformStream.js`: A somewhat generic class that can process frames and record the time it took to transform them. Measuring time is not fully transparent because calling `controller.enqueue()` typically kicks off the next `TransformStream` in the pipeline immediately, so the time counter needs to be stopped explicitly before issuing such a call.
-- `VideoFrameTimestampDecorator.js`: A class that adds an overlay to the bottom right corner of a frame, using WebGPU. Use of WebGPU to create an overlay is certainly not mandatory, it was just an excuse for us to use the technology.
+- `InstrumentedTransformStream.js`: A drop-in replacement for `TransformStream` that records the time it took to transform a chunk.
+- `VideoFrameTimestampDecorator.js`: A transformer that adds an overlay to the bottom right corner of a frame, using WebGPU. Use of WebGPU to create an overlay is certainly not mandatory, it was just an excuse for us to use the technology.
 - `worker-getinputstream.js`: A worker that generates a stream of `VideoFrame`.
 - `worker-overlay.js`: A worker that leverages `VideoFrameTimestampDecorator` to add the overlay.
 - `worker-transform.js`: A worker that can apply transforms to a stream of `VideoFrame`. We did not have time to do anything fancy here on top of encoding/decoding and basic delay operations on frames.

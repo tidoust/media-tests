@@ -80,9 +80,6 @@ self.addEventListener('message', async function(e) {
             }
             break;
         }
-        // Compute end time before calling enqueue as next TransformStream
-        // starts right when enqueue is called
-        this.setEndTime(frame.timestamp);
         controller.enqueue(frame);
       }
     });
