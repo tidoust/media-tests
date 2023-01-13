@@ -100,7 +100,9 @@ class InstrumentedTransformStream extends TransformStream {
       }
 
       enqueue(chunk) {
-        this.#stat.end = performance.timeOrigin + performance.now();
+        if (!this.#stat.end) {
+          this.#stat.end = performance.timeOrigin + performance.now();
+        }
         return this.#controller.enqueue(chunk);
       }
 
