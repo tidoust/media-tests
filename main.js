@@ -7,18 +7,15 @@ const framesToClose = {};
 
 
 /**
- * Intrinsic dimensions of the video
+ * Possible video resolutions
  */
-const width = 1920;
-const height = 1080;
-
-
-/**
- * Resolution of the video extracted by camera
- * (not using 1920*1080 as cameras may not support that resolution)
- */
-const hdConstraints = {
-  video: { width: 1280, height: 720 }
+const resolutions = {
+  '360p':  { width: 640,  height: 360 },
+  '480p':  { width: 640,  height: 480 },
+  '720p':  { width: 1280, height: 720 },
+  '1080p': { width: 1920, height: 1080 },
+  '1440p': { width: 2560, height: 1440 },
+  '2160p': { width: 3840, height: 2160 }
 };
 
 
@@ -134,6 +131,8 @@ function framestats_report(frameTimes, workerTimes) {
       return {
         id: s.id,
         end2end: Math.round(s.final?.end - s.input?.start),
+        toRGBX: s.toRGBX ? Math.round(s.toRGBX.end - s.toRGBX.start) : 0,
+        background: s.background ? Math.round(s.background.end - s.background.start) : 0,
         overlay: s.overlay ? Math.round(s.overlay.end - s.overlay.start) : 0,
         encoding: s.encode ? Math.round(s.encode.end - s.encode.start) : 0,
         decoding: s.decode ? Math.round(s.decode.end - s.decode.start) : 0,
@@ -145,6 +144,8 @@ function framestats_report(frameTimes, workerTimes) {
     }),
     stats: {
       end2end: array_report(getDurations(all, 'final', 'input')),
+      toRGBX: array_report(getDurations(all, 'toRGBX')),
+      background: array_report(getDurations(all, 'background')),
       overlay: array_report(getDurations(all, 'overlay')),
       encoding: array_report(getDurations(all, 'encode')),
       decoding: array_report(getDurations(all, 'decode')),
@@ -164,6 +165,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
   let inputTrack;
   let frameTimes = [];
   let reportedStats = {};
+  let rvfcHandle;
 
   const startButton = document.getElementById('start');
   const stopButton = document.getElementById('stop');
@@ -237,6 +239,10 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     inputWorker.postMessage({ type: 'stop' });
     overlayWorker.postMessage({ type: 'stop' });
     transformWorker.postMessage({ type: 'stop' });
+    if (rvfcHandle) {
+      video.cancelVideoFrameCallback(rvfcHandle);
+      rvfcHandle = null;
+    }
   });
 
   async function startMedia() {
@@ -249,6 +255,22 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const streamModeEl = document.querySelector('input[name="streammode"]:checked');
     const streamMode = streamModeEl?.value || 'generated';
 
+    // Get the requested video frame resolution
+    let resolution;
+    const requestedResolution = document.getElementById('resolution').value;
+    if (requestedResolution === 'default') {
+      if (streamMode === 'generated') {
+        resolution = resolutions['1080p'];
+      }
+      else {
+        resolution = resolutions['720p'];
+      }
+    }
+    else {
+      resolution = resolutions[requestedResolution];
+    }
+    resolution = JSON.parse(JSON.stringify(resolution));
+
     // Get the requested frame rate
     const frameRate = parseInt(document.getElementById('framerate').value, 10);
 
@@ -256,44 +278,42 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const overlayModeEl = document.querySelector('input[name="overlay"]:checked');
     const overlayMode = overlayModeEl?.value || 'none';
 
-    // Encoding/Decoding mode
-    const encodeModeEl = document.querySelector('input[name="encodemode"]:checked');
-    const encodeMode = encodeModeEl?.value || 'none';
-
     // TEMP: Enable/Disable VideoFrame close hack
     const closeHack = !!document.getElementById('closehack').checked;
 
-    let encodeConfig;
-    switch (encodeMode) {
-      case 'none':
-      case 'H264':
-        encodeConfig = {
-          alpha: 'discard',
-          latencyMode: 'realtime',
-          bitrateMode: 'variable',
-          codec: 'H264',
-          width,
-          height,
-          bitrate: 1000000, 
-          framerate: frameRate,
-          keyInterval: 300,
-          codec: 'avc1.42002A',
-          avc: { format: 'annexb' },
-          pt: 1
-        };
-    }
+    // Get the requested transformation modes
+    const transformModes = {
+      green: !!document.querySelector('input#mode-green:checked'),
+      outoforder: !!document.querySelector('input#mode-ooo:checked'),
+      longer: !!document.querySelector('input#mode-slow:checked'),
+      encode: !!document.querySelector('input#mode-encode:checked')
+    };
 
-    // Get the requested transformation mode
-    const transformMode = document.querySelector('input[name="mode"]:checked')?.value;
+    let encodeConfig;
+    if (transformModes.encode) {
+      encodeConfig = {
+        alpha: 'discard',
+        latencyMode: 'realtime',
+        bitrateMode: 'variable',
+        codec: 'H264',
+        width: resolution.width,
+        height: resolution.height,
+        bitrate: 1000000,
+        framerate: frameRate,
+        keyInterval: 300,
+        codec: 'avc1.42002A',
+        avc: { format: 'annexb' },
+        pt: 1
+      };
+    }
 
     const config = {
       streamMode,
-      encodeMode,
-      transformMode,
+      transformModes,
       overlayMode,
       colors,
-      width,
-      height,
+      width: resolution.width,
+      height: resolution.height,
       frameRate,
       encodeConfig,
       closeHack
@@ -325,7 +345,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       // Generate a MediaStreamTrack from the camera and pass the result in a
       // MediaStreamTrackProcess to generate a stream of VideoFrames that can
       // be fed as input to the "input" TransformStream
-      const constraints = JSON.parse(JSON.stringify(hdConstraints));
+      const constraints = { video: resolution };
       constraints.video.frameRate = frameRate;
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       inputTrack = mediaStream.getVideoTracks()[0];
@@ -334,7 +354,32 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       processor.readable.pipeTo(inputTransform.writable);
     }
 
-    let inputStream;
+    let stream = inputTransform.readable;
+
+    const identityTransform = new TransformStream({
+      transform(frame, controller) {
+          if (closeHack) {
+            // The transform creates another VideoFrame from the first one.
+            // Chromium does not properly close the frame, so let's do that now
+            // and track the new VideoFrame from now on.
+            if (framesToClose[frame.timestamp]) {
+              framesToClose[frame.timestamp].close();
+            }
+            framesToClose[frame.timestamp] = frame;
+          }
+          controller.enqueue(frame);
+        }
+    });
+    transformWorker.postMessage({
+      type: 'start',
+      config,
+      streams: {
+        input: stream,
+        output: identityTransform.writable
+      }
+    }, [stream, identityTransform.writable]);
+    stream = identityTransform.readable;
+
     if (overlayMode === 'timestamp') {
       const overlayTransform = new TransformStream({
         transform(frame, controller) {
@@ -354,15 +399,11 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         type: 'start',
         config,
         streams: {
-          input: inputTransform.readable,
+          input: stream,
           output: overlayTransform.writable
         }
-      }, [inputTransform.readable, overlayTransform.writable]);
-      inputStream = overlayTransform.readable;
-    }
-    else {
-      // No overlay requested
-      inputStream = inputTransform.readable;
+      }, [stream, overlayTransform.writable]);
+      stream = overlayTransform.readable;
     }
 
     // TEMP: workaround Chrome failure to close VideoFrames in workers
@@ -390,38 +431,33 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           });
           const inputFrame = framesToClose[frame.timestamp];
           if (inputFrame) {
-            inputFrame.close();
+            if (inputFrame !== frame) {
+              inputFrame.close();
+            }
             delete framesToClose[frame.timestamp];
           }
         }
         controller.enqueue(frame);
       }
     });
-
-    transformWorker.postMessage({
-      type: 'start',
-      config,
-      streams: {
-        input: inputStream,
-        output: closeTransform.writable
-      }
-    }, [inputStream, closeTransform.writable]);
+    stream = stream.pipeThrough(closeTransform);
 
     // The transform worker will create another stream of VideoFrames,
     // which we'll convert to a MediaStreamTrack for rendering onto the
     // video element.
     const outputFramesToTrack = new MediaStreamTrackGenerator({ kind: 'video' });
-    closeTransform.readable.pipeTo(outputFramesToTrack.writable);
+    stream.pipeTo(outputFramesToTrack.writable);
 
     video.srcObject = new MediaStream([outputFramesToTrack]);
 
     // Read back the contents of the video element onto a canvas
-    const outputCanvas = new OffscreenCanvas(width, height);
+    const outputCanvas = new OffscreenCanvas(32, 32);
     const outputCtx = outputCanvas.getContext('2d',
       { alpha: false, willReadFrequently: true });
 
     let prevPresentedFrames = 0;
-    function processFrame(ts, { presentedFrames, expectedDisplayTime }) {
+    function processFrame(ts, { presentedFrames, expectedDisplayTime, presentationTime }) {
+      rvfcHandle = null;
       if (!running) return;
       if (presentedFrames && presentedFrames > prevPresentedFrames + 1) {
         let missed = presentedFrames - prevPresentedFrames - 1;
@@ -437,25 +473,35 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           missed--;
         }
       }
+      if (presentedFrames && presentedFrames === prevPresentedFrames) {
+        // Same frame as previous loop, skip it
+        return;
+      }
       prevPresentedFrames = presentedFrames;
       if (video.currentTime > 0 && overlayMode === 'timestamp') {
-        // We're only interested by the bottom right part of the video
-        // where the encoded timestamp is
+        // We're only interested by the bottom right part of the video where the
+        // encoded timestamp is (positioned at 3/4 of width and height). Goal is
+        // to average colors in each quadrant.
         const w = video.videoWidth;
         const h = video.videoHeight;
         outputCtx.drawImage(video,
-          w / 2, h / 2, w / 2, h / 2, // Bottom right part of the video
-          0, 0, w / 2, h / 2);        // Top left part of the canvas
+          // Copy a block of 32 * 32 pixels from the bottom right part of the
+          // video, centered on the intersection of the four quadrants
+          w * 7 / 8 - 16, h * 7 / 8 - 16, 32, 32,
+          // Copy the block to the top left part of the canvas,
+          0, 0, 32, 32);
 
-        // Average colors near the center of each quadrant
+        // Average colors near the center of each quadrant (avoiding pixels
+        // close to the center where encoding/decoding step could perhaps
+        // create color artefacts)
         const coordinates = [
-          { x: w * 1 / 8 - 5, y: h * 1 / 8 - 5 },
-          { x: w * 3 / 8 - 5, y: h * 1 / 8 - 5 },
-          { x: w * 1 / 8 - 5, y: h * 3 / 8 - 5 },
-          { x: w * 3 / 8 - 5, y: h * 3 / 8 - 5 }
+          { x: 0, y: 0 },
+          { x: 20, y: 0 },
+          { x: 0, y: 20 },
+          { x: 20, y: 20 }
         ];
         const pixels = coordinates
-          .map(point => outputCtx.getImageData(point.x, point.y, 10, 10).data)
+          .map(point => outputCtx.getImageData(point.x, point.y, 8, 8).data)
           .map(pixels => {
             return pixels.reduce((total, curr, idx) => {
               const tidx = idx % 4;
@@ -463,11 +509,12 @@ document.addEventListener('DOMContentLoaded', async function (event) {
               return total;
             }, [0, 0, 0, 0]);
           })
-          .map(total => total.map(c => Math.round(c / 100)));
+          .map(total => total.map(c => Math.round(c / (8*8))));
 
         const frameIndex = colorsToTimestamp(pixels);
-        if (frameTimes.find(f => f.id === frameIndex)) {
-          console.log('color decoding issue', frameIndex, pixels);
+        const dupl = frameTimes.find(f => f.id === frameIndex)
+        if (dupl) {
+          console.log(`frame ${frameIndex} seen already`);
         }
         frameTimes.push({
           id: frameIndex,
@@ -475,7 +522,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
         });
       }
 
-      video.requestVideoFrameCallback(processFrame);
+      rvfcHandle = video.requestVideoFrameCallback(processFrame);
     }
     video.requestVideoFrameCallback(processFrame);
   }
