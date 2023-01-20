@@ -307,18 +307,19 @@ function VideoFrameTimestampDecorator(config) {
       // VideoFrame object open any longer in this CPU worker.
       frame.close();
 
-      // Wait for GPU processing to be done, create and enqueue a VideoFrame
-      // out of the the resulting canvas and compute the overall time spent
-      // in the TransformStream.
-      return gpuDevice.queue
-        .onSubmittedWorkDone()
-        .then(_ => {
-          const frame = new VideoFrame(canvas, {
-            timestamp: timestamp,
-            alpha: 'discard'
-          });
-          controller.enqueue(frame);
-        });
+      // Create and enqueue a VideoFrame out of the canvas
+      // Synchronization note: Once the GPUTexture has been created on the
+      // canvas' context through the call to getCurrentTexture() a bit earlier,
+      // any read operation on the canvas' content will be delayed until the
+      // results of the processing are available. No need to wait on
+      // `onSubmittedWorkDone` although note that, if GPU processing takes a
+      // long time, the script will be paused accordingly.
+      // See https://github.com/gpuweb/gpuweb/issues/3762#issuecomment-1398339650
+      const processedFrame = new VideoFrame(canvas, {
+        timestamp: timestamp,
+        alpha: 'discard'
+      });
+      controller.enqueue(processedFrame);
     }
   };
 }
