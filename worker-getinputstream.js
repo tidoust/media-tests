@@ -172,7 +172,7 @@ self.addEventListener('message', async function (e) {
       '#f00',
       '#f90',
       '#ff0',
-      '#8f0',
+      '#8fb',
       '#09f',
       '#63f'
     ];

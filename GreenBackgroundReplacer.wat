@@ -99,16 +99,27 @@
           (local.get $color)
           (i32.const 255)))
 
-        ;; Replace pixel if color is green ($g > 2 * ($r + $b))
-        (i32.add (local.get $r) (local.get $b))
-        (i32.const 1)
-        (i32.shl)
-        (if (i32.lt_u (local.get $g))
+        ;; Replace pixel if color is greenish enough
+        (if (i32.gt_u (local.get $g) (i32.const 128))
           (then
-            ;; Did I mention that memory offsets are always in bytes already?
-            (i32.store
-              (i32.mul (local.get $pos) (i32.const 4))
-              (local.get $w3cBlue)
+            (if (i32.gt_u (local.get $g) (local.get $r))
+              (then
+                (if (i32.gt_u (local.get $g) (local.get $b))
+                  (then
+                    (i32.add (local.get $r) (local.get $b))
+                    (i32.mul (i32.const 8))
+                    (if (i32.lt_u (i32.mul (local.get $g) (i32.const 10)))
+                      (then
+                        ;; Did I mention that memory offsets are always in bytes already?
+                        (i32.store
+                          (i32.mul (local.get $pos) (i32.const 4))
+                          (local.get $w3cBlue)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
             )
           )
         )
