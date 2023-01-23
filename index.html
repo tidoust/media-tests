@@ -30,10 +30,24 @@
   <div id="params">
     <p>
       How to create the initial stream of <code>VideoFrame</code>:<br/>
-      <input type="radio" id="streammode1" name="streammode" value="generated">
+      <input type="radio" id="streammode1" name="streammode" value="generated" checked="checked">
       <label for="streammode1">From scratch (<code>new VideoFrame()</code>)</label><br/>
-      <input type="radio" id="streammode2" name="streammode" value="usermedia" checked="checked">
-      <label for="streammode2">From camera (<code>getUserMedia()</code> + <code>MediaStreamTrackProcessor</code>)</label>
+      <input type="radio" id="streammode2" name="streammode" value="usermedia">
+      <label for="streammode2">From camera (<code>getUserMedia() + MediaStreamTrackProcessor</code>)</label>
+    </p>
+
+    <p>
+      Video resolution:<br/>
+      <em>(Your camera may not support all modes!)</em><br/>
+      <select id="resolution">
+        <option value="default">Full HD if from scratch, HD if from camera</option>
+        <option value="360p">SD 360p - 640 x 360</option>
+        <option value="480p">SD 480p - 640 x 480</option>
+        <option value="720p">HD 720p - 1280 x 720</option>
+        <option value="1080p">Full HD 1080p - 1920 x 1080</option>
+        <option value="1440p">QHD 1440p - 2560 x 1440</option>
+        <option value="2160p">4K 2160p - 3840 x 2160</option>
+      </select>
     </p>
 
     <p>
@@ -42,30 +56,23 @@
     </p>
 
     <p>
+      Transform frames in any way?<br/>
+      <input type="checkbox" id="mode-green" checked="checked">
+      <label for="mode-green">Replace green with W3C blue (<em>uses WebAssembly</em>)</label><br/>
+      <input type="checkbox" id="mode-encode">
+      <label for="mode-encode">Encode/Decode in H.264 (<em>uses WebCodecs</em>)</label><br/>
+      <input type="checkbox" id="mode-ooo">
+      <label for="mode-ooo">Out-of-order <code>VideoFrame</code> every 5 seconds</label><br/>
+      <input type="checkbox" id="mode-slow">
+      <label for="mode-slow">Take longer to process <code>VideoFrames</code> every 2 seconds (lower frame rate preferrable)</label>
+    </p>
+
+    <p>
       Add overlay to track actual display time in <code>&lt;video&gt;</code> element?<br/>
-      <i>(Warning: requires browser to support WebGPU)</i><br/>
       <input type="radio" id="overlay1" name="overlay" value="none">
       <label for="overlay1">No overlay</label><br/>
       <input type="radio" id="overlay2" name="overlay" value="timestamp" checked="checked">
-      <label for="overlay2">Add timestamp overlay in bottom-right corner</label>
-    </p>
-
-    <p>
-      Transform frames in any way?<br/>
-      <input type="radio" id="mode1" name="mode" value="identity" checked="checked">
-      <label for="mode1">No transform applied</label><br/>
-      <input type="radio" id="mode2" name="mode" value="outoforder">
-      <label for="mode2">Out-of-order <code>VideoFrame</code> every 5 seconds</label><br/>
-      <input type="radio" id="mode3" name="mode" value="longer">
-      <label for="mode3">Take longer to process <code>VideoFrames</code> every 2 seconds (lower frame rate preferrable)</label>
-    </p>
-
-    <p>
-      Add Encode/Decode steps?<br/>
-      <input type="radio" id="encodemode1" name="encodemode" value="none" checked="checked">
-      <label for="encodemode1">None</label><br/>
-      <input type="radio" id="encodemode2" name="encodemode" value="H264">
-      <label for="encodemode2">H.264</label>
+      <label for="overlay2">Add timestamp overlay in bottom-right corner (<em>uses WebGPU</em>)</label>
     </p>
 
     <p>

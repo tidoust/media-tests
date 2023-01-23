@@ -172,13 +172,15 @@ self.addEventListener('message', async function (e) {
       '#f00',
       '#f90',
       '#ff0',
-      '#3f0',
+      '#8f0',
       '#09f',
       '#63f'
     ];
 
     function timestampToVideoFrame(timestamp) {
-      inputCtx.fillStyle = '#005a9c';
+      // W3C blue! No, green FTW!
+      //inputCtx.fillStyle = '#005a9c';
+      inputCtx.fillStyle = '#009c02';
       inputCtx.fillRect(0, 0, width, height);
 
       // Render timestamp
