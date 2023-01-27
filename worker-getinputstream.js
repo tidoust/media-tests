@@ -22,9 +22,13 @@ let writer;
 let intervalId;
 let started = false;
 
-// TEMP: workaround Chrome failure to close VideoFrames in workers
-// when they are transferred to the main thread.
-// Drop whenever possible!
+// TEMP: VideoFrames sent through a TransformStream are serialized (and thus
+// cloned) and not transferred for now. This means that they need to be closed
+// on both ends, in particular when TransformStream sits across workers.
+// Unfortunately, they cannot be closed right away on the sender's end because
+// the receiver may not yet have received them. Workaround is to close them at
+// the end of the processing.
+// For additional context, see https://github.com/whatwg/streams/issues/1187
 const framesToClose = {};
 
 self.addEventListener('message', async function (e) {
@@ -268,9 +272,7 @@ self.addEventListener('message', async function (e) {
       const timestamp = Math.round(performance.now() - startTimestamp);
       if (timestamp > previousTimestamp) {
         const frame = timestampToVideoFrame(timestamp);
-        // TEMP: workaround Chrome failure to close VideoFrames in workers
-        // when they are transferred to the main thread.
-        // Drop whenever possible!
+        // TEMP: VideoFrame close hack
         if (config.closeHack) {
           framesToClose[frame.timestamp] = frame;
         }
@@ -306,9 +308,7 @@ self.addEventListener('message', async function (e) {
       writer = null;
     }
   }
-  // TEMP: workaround Chrome failure to close VideoFrames in workers
-  // when they are transferred to the main thread.
-  // Drop whenever possible!
+  // TEMP: VideoFrame close hack
   else if (e.data.type === 'closeframe') {
     const frame = framesToClose[e.data.timestamp];
     if (frame) {
