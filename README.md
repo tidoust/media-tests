@@ -48,6 +48,7 @@ The code features the following files:
 - `worker-getinputstream.js`: A worker that generates a stream of `VideoFrame`.
 - `worker-overlay.js`: A worker that leverages `VideoFrameTimestampDecorator` to add the overlay.
 - `worker-transform.js`: A worker that can apply transforms to a stream of `VideoFrame`, including green color replacement, H.264 encoding/decoding, and slight alterations of frame delays.
+- `StepTimesDB.js`: A generic simple in-memory database to record step processing times of chunks in a stream, and compute stats out of them.
 - `main.js`: Main thread logic. The code uses `requestVideoFrameCallback` to inspect rendered frames, copy them to a canvas and decode the color-encoded overlay to retrieve the frame's timestamp (and thus compute the time at which the frame was rendered).
 
 

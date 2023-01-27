@@ -57,113 +57,10 @@ function colorsToTimestamp(pixels) {
 }
 
 
-/**
- * Compute min/max/avg/median statistics from collected times. Done once when
- * user hits "stop" button.
- */
-function framestats_report(frameTimes, workerTimes) {
-  function array_report(durations) {
-    durations = durations.slice().sort();
-    const count = durations.length;
-    const sum = durations.reduce((sum, duration) => sum + duration, 0);
-    const half = count >> 1;
-    const median = Math.round(count % 2 === 1 ? durations[half] : (durations[half - 1] + durations[half]) / 2);
-    return {
-      count,
-      min: Math.round(Math.min(...durations)),
-      max: Math.round(Math.max(...durations)),
-      avg: Math.round(sum / count),
-      median
-    };
-  }
-
-  function getDurations(stats, finalStep, startingStep) {
-    startingStep = startingStep ?? finalStep;
-    return stats
-      .filter(s => s[finalStep]?.end && s[startingStep]?.start)
-      .map(s => s[finalStep].end - s[startingStep].start);
-  }
-
-  function getQueuedDuration(stats) {
-    const times = Object.values(stats)
-      .filter(v => v?.start)
-      .sort((times1, times2) => times1.start - times2.start);
-    return times.slice(0, -1)
-      .map((s, idx) => times[idx + 1].start - s.end)
-      .reduce((curr, total) => total += curr, 0);
-  }
-
-  // Compute approximative time during which each frame was displayed
-  frameTimes.slice(0, -1).forEach((f, idx) => {
-    f.displayDuration = frameTimes[idx + 1].expectedDisplayTime - f.expectedDisplayTime;
-  });
-
-  // Collect stats from main thread
-  const all = InstrumentedTransformStream.collectStats();
-  InstrumentedTransformStream.resetStats();
-
-  // Complete stats with worker stats and display stats
-  all.forEach(s => {
-    Object.values(workerTimes).forEach(wt => {
-      const wStats = wt.find(w => w.id === s.id);
-      if (wStats) {
-        Object.assign(s, wStats);
-      }
-    });
-
-    const fTimes = frameTimes.find(f => f.id === Math.floor(s.id / 1000));
-    if (fTimes) {
-      s.expectedDisplayTime = fTimes.expectedDisplayTime;
-      s.displayDuration = fTimes.displayDuration;
-    }
-  });
-
-  const displayDiff = frameTimes.slice(0, -1)
-    .map(f => f.displayDuration)
-    .filter(dur => dur > 0);
-
-  const outoforder = frameTimes
-    .filter((f, idx) => idx > 0 && frameTimes[idx - 1].id > f.id);
-
-  const res = {
-    all,
-    durations: all.map(s => {
-      return {
-        id: s.id,
-        end2end: Math.round(s.final?.end - s.input?.start),
-        toRGBX: s.toRGBX ? Math.round(s.toRGBX.end - s.toRGBX.start) : 0,
-        background: s.background ? Math.round(s.background.end - s.background.start) : 0,
-        overlay: s.overlay ? Math.round(s.overlay.end - s.overlay.start) : 0,
-        encoding: s.encode ? Math.round(s.encode.end - s.encode.start) : 0,
-        decoding: s.decode ? Math.round(s.decode.end - s.decode.start) : 0,
-        outoforder: s.outoforder ? Math.round(s.outoforder.end - s.outoforder.start) : 0,
-        longer: s.longer ? Math.round(s.longer.end - s.longer.start) : 0,
-        display: Math.round(s.displayDuration),
-        queued: getQueuedDuration(s)
-      };
-    }),
-    stats: {
-      end2end: array_report(getDurations(all, 'final', 'input')),
-      toRGBX: array_report(getDurations(all, 'toRGBX')),
-      background: array_report(getDurations(all, 'background')),
-      overlay: array_report(getDurations(all, 'overlay')),
-      encoding: array_report(getDurations(all, 'encode')),
-      decoding: array_report(getDurations(all, 'decode')),
-      outoforder: array_report(getDurations(all, 'outoforder')),
-      longer: array_report(getDurations(all, 'longer')),
-      display: array_report(displayDiff),
-      queued: array_report(all.map(getQueuedDuration))
-    },
-    outoforder
-  };
-
-  return res;
-}
-
 document.addEventListener('DOMContentLoaded', async function (event) {
   let running = false;
   let inputTrack;
-  let frameTimes = [];
+  let timesDB = new StepTimesDB();
   let reportedStats = {};
   let rvfcHandle;
 
@@ -189,6 +86,19 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     icon = await createImageBitmap(img);
   });
 
+  function reportStats() {
+    const mainStats = InstrumentedTransformStream.collectStats();
+    timesDB.addEntries(mainStats);
+    if (reportedStats.transformWorker) {
+      timesDB.addEntries(reportedStats.transformWorker);
+    }
+    if (reportedStats.overlayWorker) {
+      timesDB.addEntries(reportedStats.overlayWorker);
+    }
+    const report = timesDB.computeStats();
+    console.log(report);
+  }
+
   // Initialize workers:
   // 1. a worker that can produce a stream of VideoFrames from scratch
   // 2. a worker that can add an overlay to a stream of VideoFrames
@@ -199,8 +109,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     if (e.data.type === 'stats') {
       reportedStats.overlayWorker = e.data.stats;
       if (reportedStats.transformWorker) {
-        const stats = framestats_report(frameTimes, reportedStats);
-        console.log(stats);
+        reportStats();
       }
     }
   });
@@ -210,8 +119,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     if (e.data.type === 'stats') {
       reportedStats.transformWorker = e.data.stats;
       if (reportedStats.overlayWorker) {
-        const stats = framestats_report(frameTimes, reportedStats);
-        console.log(stats);
+        reportStats();
       }
     }
   });
@@ -247,9 +155,10 @@ document.addEventListener('DOMContentLoaded', async function (event) {
 
   async function startMedia() {
     // Reset stats
+    timesDB.reset();
     InstrumentedTransformStream.resetStats();
-    frameTimes = [];
     reportedStats = {};
+    let missedCounter = 0;
 
     // What stream should we use as input?
     const streamModeEl = document.querySelector('input[name="streammode"]:checked');
@@ -466,9 +375,9 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           '| missed:', missed);
         while (missed) {
           // Record missed frames
-          frameTimes.push({
-            id: -1,
-            expectedDisplayTime
+          timesDB.addEntry({
+            id: `missed-${missedCounter++}`,
+            display: { start: performance.timeOrigin + expectedDisplayTime }
           });
           missed--;
         }
@@ -511,14 +420,14 @@ document.addEventListener('DOMContentLoaded', async function (event) {
           })
           .map(total => total.map(c => Math.round(c / (8*8))));
 
-        const frameIndex = colorsToTimestamp(pixels);
-        const dupl = frameTimes.find(f => f.id === frameIndex)
+        const frameIndex = colorsToTimestamp(pixels) * 1000;
+        const dupl = timesDB.find(frameIndex);
         if (dupl) {
           console.log(`frame ${frameIndex} seen already`);
         }
-        frameTimes.push({
+        timesDB.addEntry({
           id: frameIndex,
-          expectedDisplayTime
+          display: { start: performance.timeOrigin + expectedDisplayTime }
         });
       }
 
