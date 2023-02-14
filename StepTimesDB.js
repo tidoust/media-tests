@@ -37,11 +37,11 @@
  * care of setting the "end" property itself).
  * 
  * Stats reported contain minimum, maximum, average, median and count stats for
- * step durations. They also contain the time spent in between processing steps,
- * i.e time spent in queues.
+ * step durations.
  * 
- * Stats reported also contain end-to-end statistics provided that the names of
- * the initial and final steps were given to the constructor.
+ * Stats reported also contain end-to-end statistics and the time spent in
+ * between processing steps, i.e. time spent in queues, provided that the names
+ * of the initial and final steps were given to the constructor.
  */
 
 'use strict';

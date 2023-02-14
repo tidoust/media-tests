@@ -64,7 +64,7 @@ function colorsToTimestamp(pixels) {
 document.addEventListener('DOMContentLoaded', async function (event) {
   let running = false;
   let inputTrack;
-  let timesDB = new StepTimesDB();
+  let timesDB = new StepTimesDB({ initialStep: 'input', finalStep: 'final' });
   let reportedStats = {};
   let rvfcHandle;
 
