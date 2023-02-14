@@ -18,6 +18,11 @@
       width: var(--width);
       height: calc(var(--width) * 9 / 16);
     }
+    th, td {
+      border-right: thin solid #999;
+      border-bottom: thin solid #999;
+      text-align: right;
+    }
   </style>
 </head>
 
@@ -85,6 +90,31 @@
   <p>
     <video height="50%" id="outputVideo" autoplay muted controls></video>
   </p>
+
+  <section id="stats" hidden>
+    <h2>Results of previous run</h2>
+    <table id="stats">
+      <thead>
+        <tr>
+          <th>Counter</th>
+          <th>Count</th>
+          <th>Avg.</th>
+          <th>Median</th>
+          <th>Min.</th>
+          <th>Max.</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+      <caption>Processing steps stats</caption>
+    </table>
+    <p>Notes on statistics:</p>
+    <ul>
+      <li>The "display" counter measures the time during which the frame was displayed.</li>
+      <li>The "end2end" counter does not take the display time into account.</li>
+      <li>The "queued" counter does not take time spent waiting for display either.</li>
+    </ul>
+  </div>
 
   <script src="InstrumentedTransformStream.js"></script>
   <script src="StepTimesDB.js"></script>

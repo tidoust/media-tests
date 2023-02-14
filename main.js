@@ -101,6 +101,39 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     }
     const report = timesDB.computeStats();
     console.log(report);
+    const statsEl = document.getElementById('stats');
+    const tbody = document.querySelector('#stats tbody');
+    tbody.innerHTML = '';
+
+    function reportCounter(name) {
+      const stats = report.stats[name];
+      const res = `<tr>
+        <td>${name}</td>
+        <td>${stats.count}</td>
+        <td>${stats.avg}</td>
+        <td>${stats.median}</td>
+        <td>${stats.min}</td>
+        <td>${stats.max}</td>
+      </tr>`;
+      tbody.innerHTML += res;
+    }
+
+    const orderedCounters = [
+      'toRGBX', 'background',
+      'encode', 'decode',
+      'outoforder', 'longer',
+      'overlay',
+      'display',
+      'end2end',
+      'queued'
+    ];
+    for (const counter of orderedCounters) {
+      if (report.stats[counter]?.count > 0) {
+        reportCounter(counter);
+      }
+    }
+
+    document.getElementById('stats').hidden = false;
   }
 
   // Initialize workers:
@@ -135,6 +168,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     stopButton.disabled = false;
     paramsSection.hidden = true;
     video.hidden = false;
+    document.getElementById('stats').hidden = true;
     startMedia();
   });
 
