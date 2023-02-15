@@ -15,6 +15,7 @@
 importScripts('InstrumentedTransformStream.js');
 importScripts('GreenBackgroundReplacer.js');
 importScripts('BlackAndWhiteConverter.js');
+importScripts('ToCPUMemoryCopier.js');
 importScripts('ToRGBXVideoFrameConverter.js');
 
 let started = false;
@@ -43,16 +44,35 @@ self.addEventListener('message', async function(e) {
     const outputStream = e.data.streams.output;
     const config = e.data.config;
     const transformModes = config.transformModes || {};
+    const memoryMode = config.memoryMode || 'no';
+    const overlayMode = config.overlayMode;
     const encodeConfig = config.encodeConfig;
     const frameRate = config.frameRate || 25;
     const frameDuration = Math.round(1000 / frameRate);
 
     let intermediaryStream = inputStream;
 
+    function copyToMemory(memory, nextstep) {
+      const copier = (memory === 'cpu') ?
+        new ToCPUMemoryCopier(config) :
+        new ToRGBXVideoFrameConverter(config);
+      const copyFrame = new InstrumentedTransformStream(
+        Object.assign({ name: `to${memory.toUpperCase()}-${nextstep}` }, copier));
+      intermediaryStream = intermediaryStream.pipeThrough(copyFrame);
+    }
+
+    if (memoryMode === 'cpu') {
+      copyToMemory(memoryMode, 'rgbx');
+    }
+
     const toRGBXConverter = new ToRGBXVideoFrameConverter(config);
     const convertToRGBX = new InstrumentedTransformStream(
       Object.assign({ name: 'toRGBX' }, toRGBXConverter));
     intermediaryStream = intermediaryStream.pipeThrough(convertToRGBX);
+
+    if ((memoryMode === 'cpu') && (transformModes.green || transformModes.grey)) {
+      copyToMemory(memoryMode, 'transform');
+    }
 
     if (transformModes.green) {
       const backgroundTransformer = new GreenBackgroundReplacer(config);
@@ -242,9 +262,17 @@ self.addEventListener('message', async function(e) {
           }
         }
       });
+
+      if (memoryMode !== 'no') {
+        copyToMemory(memoryMode, 'encode');
+      }
       intermediaryStream = intermediaryStream
         .pipeThrough(EncodeVideoStream)
         .pipeThrough(DecodeVideoStream);
+    }
+
+    if ((memoryMode !== 'no') && (overlayMode !== 'none')) {
+      copyToMemory(memoryMode, 'overlay');
     }
 
     intermediaryStream

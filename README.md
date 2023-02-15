@@ -28,11 +28,11 @@ The [demo](https://tidoust.github.io/media-tests/) requires support for the list
 
 The demo lets the user:
 - Choose a source of input to create an initial stream of `VideoFrame`: either an animation created from scratch (using `OffscreenCanvas`) or a stream generated from a camera.
-- Replace green with W3C blue color using WebAssembly, and/or add an H.264 encoding/decoding transformation stage using WebCodecs, and/or introduce slight delays in the stream using regular JavaScript.
+- Replace green with W3C blue color using WebAssembly, convert the frame to grey using JavaScript, and/or add an H.264 encoding/decoding transformation stage using WebCodecs, and/or introduce slight delays in the stream using regular JavaScript.
 - Add an overlay to the bottom right part of the video that encodes the frame's timestamp. The overlay is added using WebGPU and WGSL.
+- Force explicit copies to CPU memory or GPU memory before transformation steps to evaluate the impact of the frame's location on processing times.
 
-
-Timing statistics are reported as objects to the console when the "Stop" button is pressed (this requires opening the dev tools panel). Display times for each frame are reported too when the overlay was present.
+Timing statistics are reported in a table at the end of the page and as objects to the console when the "Stop" button is pressed (this requires opening the dev tools panel). Display times for each frame are reported too when the overlay was present.
 
 
 ## Quick code walkthrough
@@ -45,7 +45,8 @@ The code features the following files:
 - `VideoFrameTimestampDecorator.js`: A transformer that adds an overlay to the bottom right corner of a frame, using WebGPU. Use of WebGPU to create an overlay is certainly not mandatory, it was just an excuse for us to use the technology.
 - `GreenBackgroundReplacer.js`: A transformer that replaces green present in the video frame with W3C blue, using WebAssembly. Use of WebAssembly to run this action is also certainly not mandatory (and probably not a good idea in practice), it was again just an excuse for us to use the technology. The transformer references binary WebAssembly code in `GreenBackgroundReplacer.wasm`. That binary code is generated from the WebAssembly code in text format in `GreenBackgroundReplacer.wat`. Code was written using the text format and not one of the many languages that can get transpiled to binary WebAssembly to better understand how WebAssembly works internally. Code was compiled with the [`wat2wasm` package](https://www.npmjs.com/package/wat2wasm), but you may get the same result with the [online `wat2wasm` demo](https://webassembly.github.io/wabt/demo/wat2wasm/).
 - `BlackAndWhiteConverter.js`: A transformer that replaces color with shades of grey, using pure JavaScript. This is meant to serve as a reference step to evaluate JavaScript performance for processing pixels.
-- `ToRGBXVideoFrameConverter.js`: A transformer that converts a video frame, regardless of its pixel format, to a video frame that uses the `RGBX` format. The transformer uses WebGPU, which is very convenient here because the `GPUSampler` does all the work! This avoids having to handle different formats in the WebAssembly code.
+- `ToRGBXVideoFrameConverter.js`: A transformer that converts a video frame, regardless of its pixel format, to a video frame that uses the `RGBX` format. The transformer uses WebGPU, which is very convenient here because the `GPUSampler` does all the work! This avoids having to handle different formats in the WebAssembly code. The transformer can also be used to copy frame data to GPU memory.
+- `ToCPUMemoryCopier.js`: A transformat that copies video frame data to an `ArrayBuffer` in CPU memory. Together with the previous transformer, this transformer is useful to evaluate the impact of a frame's location in memory on transformations it could go through.
 - `worker-getinputstream.js`: A worker that generates a stream of `VideoFrame`.
 - `worker-overlay.js`: A worker that leverages `VideoFrameTimestampDecorator` to add the overlay.
 - `worker-transform.js`: A worker that can apply transforms to a stream of `VideoFrame`, including green color replacement, H.264 encoding/decoding, and slight alterations of frame delays.

@@ -119,10 +119,11 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     }
 
     const orderedCounters = [
-      'toRGBX', 'background', 'grey',
-      'encode', 'decode',
+      'toCPU-rgbx', 'toRGBX',
+      'toCPU-transform', 'background', 'grey',
+      'toCPU-encode', 'toGPU-encode', 'encode', 'decode',
       'outoforder', 'longer',
-      'overlay',
+      'toCPU-overlay', 'toGPU-overlay', 'overlay',
       'display',
       'end2end',
       'queued'
@@ -225,6 +226,10 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     const overlayModeEl = document.querySelector('input[name="overlay"]:checked');
     const overlayMode = overlayModeEl?.value || 'none';
 
+    // Memory mode
+    const memoryModeEl = document.querySelector('input[name="memory"]:checked');
+    const memoryMode = memoryModeEl?.value || 'no';
+
     // TEMP: Enable/Disable VideoFrame close hack
     const closeHack = !!document.getElementById('closehack').checked;
 
@@ -259,6 +264,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       streamMode,
       transformModes,
       overlayMode,
+      memoryMode,
       colors,
       width: resolution.width,
       height: resolution.height,

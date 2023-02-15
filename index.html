@@ -62,9 +62,9 @@
 
     <p>
       Transform frames in any way?<br/>
-      <input type="checkbox" id="mode-green">
+      <input type="checkbox" id="mode-green" checked="checked">
       <label for="mode-green">Replace green with W3C blue (<em>uses WebAssembly</em>)</label><br/>
-      <input type="checkbox" id="mode-grey" checked="checked">
+      <input type="checkbox" id="mode-grey">
       <label for="mode-green">Convert image to black and white (<em>uses JavaScript</em>)</label><br/>
       <input type="checkbox" id="mode-encode">
       <label for="mode-encode">Encode/Decode in H.264 (<em>uses WebCodecs</em>)</label><br/>
@@ -80,6 +80,16 @@
       <label for="overlay1">No overlay</label><br/>
       <input type="radio" id="overlay2" name="overlay" value="timestamp" checked="checked">
       <label for="overlay2">Add timestamp overlay in bottom-right corner (<em>uses WebGPU</em>)</label>
+    </p>
+
+    <p>
+      Explicitly copy frames to a specific part of memory in between steps?<br/>
+      <input type="radio" id="memory1" name="memory" value="no" checked="checked">
+      <label for="overlay1">No specific copy</label><br/>
+      <input type="radio" id="memory2" name="memory" value="cpu">
+      <label for="overlay1">Copy frames to CPU memory</label><br/>
+      <input type="radio" id="memory3" name="memory" value="gpu">
+      <label for="overlay1">Copy frames to GPU memory</label>
     </p>
 
     <p>
@@ -116,6 +126,7 @@
       <li>The "end2end" counter does not take the display time into account.</li>
       <li>The "queued" counter does not take time spent waiting for display either.</li>
       <li>Some steps may not see all frames, e.g. "display". That's normal!</li>
+      <li>If you choose explicit copies to CPU/GPU memory, new "toCPU-xxx" or "toGPU-xxx" stats will appear, with "xxx" being the name of the next step (noting that "transform" covers "background" and "grey").</li>
     </ul>
   </div>
 

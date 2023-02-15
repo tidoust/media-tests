@@ -8,6 +8,9 @@
  * using).
  *
  * The transformer uses WebGPU to perform the conversion.
+ *
+ * By definition, the transformer copies the underlying media resource to GPU
+ * memory if it is not there already.
  */
 function ToRGBXVideoFrameConverter(config) {
   /**

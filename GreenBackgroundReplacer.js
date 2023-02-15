@@ -79,14 +79,10 @@ function GreenBackgroundReplacer(config) {
       // Create new frame out of processed buffer
       const processedFrame = new VideoFrame(new Uint8Array(memory.buffer), {
         format: frame.format,
-        codedWidth: frame.codedWidth,
-        codedHeight: frame.codedHeight,
+        codedWidth: frame.displayWidth,
+        codedHeight: frame.displayHeight,
         timestamp: frame.timestamp,
-        duration: frame.duration,
-        visibleRect: frame.visibleRect,
-        displayWidth: frame.displayWidth,
-        displayHeight: frame.displayHeight,
-        colorSpace: frame.colorSpace
+        duration: frame.duration
       });
 
       // Time to get rid of the incoming VideoFrame and to return the newly
