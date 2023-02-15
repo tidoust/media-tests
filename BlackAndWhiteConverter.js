@@ -14,8 +14,7 @@ function BlackAndWhiteConverter(config) {
 
   return {
     /**
-     * Process a new frame and replace the green it contains with the W3C blue
-     * color.
+     * Process a new frame and replace colors it contains with grey.
      */
     async transform(frame, controller) {
       // Copy frame bytes to the buffer
