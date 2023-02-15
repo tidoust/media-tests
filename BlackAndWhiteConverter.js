@@ -35,13 +35,6 @@ function BlackAndWhiteConverter(config) {
       }
       
       // Create new frame out of processed buffer
-      // Note Chrome dislikes "RGBX" and "BGRX" even when that is what it
-      // returns for the incoming VideoFrame!
-      console.log(frame.format);
-      const processedFormat =
-        frame.format === 'RGBX' ? 'RGBA' :
-        frame.format === 'BGRX' ? 'BGRA' :
-        frame.format;
       const processedFrame = new VideoFrame(buffer, {
         format: frame.format,
         codedWidth: frame.codedWidth,

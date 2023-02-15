@@ -77,14 +77,8 @@ function GreenBackgroundReplacer(config) {
       processFrame(frame.codedWidth, frame.codedHeight, videoPixelFormatIndex.indexOf(frame.format));
 
       // Create new frame out of processed buffer
-      // Note Chrome dislikes "RGBX" and "BGRX" even when that is what it
-      // returns for the incoming VideoFrame!
-      const processedFormat =
-        frame.format === 'RGBX' ? 'RGBA' :
-        frame.format === 'BGRX' ? 'BGRA' :
-        frame.format;
       const processedFrame = new VideoFrame(new Uint8Array(memory.buffer), {
-        format: processedFormat,
+        format: frame.format,
         codedWidth: frame.codedWidth,
         codedHeight: frame.codedHeight,
         timestamp: frame.timestamp,
