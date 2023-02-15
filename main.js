@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     }
 
     const orderedCounters = [
-      'toRGBX', 'background',
+      'toRGBX', 'background', 'grey',
       'encode', 'decode',
       'outoforder', 'longer',
       'overlay',
@@ -231,6 +231,7 @@ document.addEventListener('DOMContentLoaded', async function (event) {
     // Get the requested transformation modes
     const transformModes = {
       green: !!document.querySelector('input#mode-green:checked'),
+      grey: !! document.querySelector('input#mode-grey:checked'),
       outoforder: !!document.querySelector('input#mode-ooo:checked'),
       longer: !!document.querySelector('input#mode-slow:checked'),
       encode: !!document.querySelector('input#mode-encode:checked')

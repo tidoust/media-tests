@@ -14,6 +14,7 @@
 
 importScripts('InstrumentedTransformStream.js');
 importScripts('GreenBackgroundReplacer.js');
+importScripts('BlackAndWhiteConverter.js');
 importScripts('ToRGBXVideoFrameConverter.js');
 
 let started = false;
@@ -58,6 +59,13 @@ self.addEventListener('message', async function(e) {
       const replaceBackground = new InstrumentedTransformStream(
         Object.assign({ name: 'background' }, backgroundTransformer));
       intermediaryStream = intermediaryStream.pipeThrough(replaceBackground);
+    }
+
+    if (transformModes.grey) {
+      const blackAndWhiteConverter = new BlackAndWhiteConverter(config);
+      const convertToBlackAndWhite = new InstrumentedTransformStream(
+        Object.assign({ name: 'grey' }, blackAndWhiteConverter));
+      intermediaryStream = intermediaryStream.pipeThrough(convertToBlackAndWhite);
     }
 
     if (transformModes.outoforder) {
