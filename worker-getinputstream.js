@@ -38,11 +38,21 @@ self.addEventListener('message', async function (e) {
 
     // Configuration
     const config = e.data.config;
+    const writableStream = e.data.stream;
+
+    // If we're generating a stream of VideoFrames from a MediaStreamTrack,
+    // all we need to do it to pass it to a MediaStreamTrackProcessor
+    if (config.track) {
+      const processor = new MediaStreamTrackProcessor({ track: config.track });
+      processor.readable.pipeTo(writableStream);
+      return;
+    }
+
+    // If not, we need to generate the stream of VideoFrames from scratch
     const width = config.width;
     const height = config.height;
     const frameRate = config.frameRate || 25;
     const frameDuration = Math.round(1000 / frameRate);
-    const writableStream = e.data.stream;
     writer = writableStream.getWriter();
 
     // Create the canvas onto which we'll generate our frame drawing

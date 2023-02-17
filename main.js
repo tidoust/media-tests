@@ -304,8 +304,12 @@ document.addEventListener('DOMContentLoaded', async function (event) {
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       inputTrack = mediaStream.getVideoTracks()[0];
       console.log(inputTrack.getSettings());
-      const processor = new MediaStreamTrackProcessor({ track: inputTrack });
-      processor.readable.pipeTo(inputTransform.writable);
+      inputWorker.postMessage({
+        type: 'start',
+        config,
+        stream: inputTransform.writable,
+        track: inputTrack
+      }, [inputTransform.writable, inputTrack]);
     }
 
     let stream = inputTransform.readable;
