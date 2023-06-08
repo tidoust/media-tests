@@ -133,7 +133,15 @@ class StepTimesDB {
       const finalTime = this.#finalStep ? stat[this.#finalStep]?.start : null;
       const times = Object.values(stat)
         .filter(time => !finalTime || time.start <= finalTime)
-        .sort((time1, time2) => time1.start - time2.start);
+        .sort((time1, time2) => {
+          const diff = time1.start - time2.start;
+          if (diff === 0) {
+            return time1.end - time2.end;
+          }
+          else {
+            return diff;
+          }
+        });
       if (times.find(t => !t.start || !t.end)) {
         return null;
       }
